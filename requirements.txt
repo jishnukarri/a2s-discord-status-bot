@@ -1,0 +1,3 @@
+pycord
+python-a2s
+tabulate
