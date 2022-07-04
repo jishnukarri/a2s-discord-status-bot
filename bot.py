@@ -40,7 +40,13 @@ def generate_embed():
     except (ConnectionResetError, OSError, socket.gaierror):
         return discord.Embed(title="Unknown server",color=0x00ff00,description="Server is unreachable.",timestamp=datetime.datetime.now())
 
-    server_players = a2s.players(a2sIP)
+    try:
+        server_players = a2s.players(a2sIP)
+    except socket.timeout:
+        return discord.Embed(title="Server down",color=0x00ff00,description="The server is currently down.",timestamp=datetime.datetime.now())
+    except (ConnectionResetError, OSError, socket.gaierror):
+        return discord.Embed(title="Unknown server",color=0x00ff00,description="Server is unreachable.",timestamp=datetime.datetime.now())
+
 
     header = ""
     plycount = "Player count: {current}/{max}\n".format(current=server_info.player_count,max=server_info.max_players)
