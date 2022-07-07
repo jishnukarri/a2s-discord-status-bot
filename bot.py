@@ -81,14 +81,9 @@ async def set_status():
     game = discord.Activity(name=text, type=discord.ActivityType.watching)
     await client.change_presence(status=status, activity=game)
 
-async def set_status_loop():
-    while True:
-        await set_status()
-        await asyncio.sleep(5)
-
 async def reset_message():
     await client.status_message.clear_reactions()
-    
+    await set_status()
     if time() > client.next_allowed_call:
         await client.status_message.edit(embed=generate_embed())
 
@@ -120,10 +115,9 @@ async def on_ready():
         return
     client.next_allowed_call = time()
     client.status_channel = client.get_channel(CHANNEL)
+    await set_status()
     client.status_message = await client.status_channel.send(embed=generate_embed())
     await client.status_message.add_reaction(REFRESH_EMOJI)
-
-    asyncio.create_task(set_status_loop())
 
     print(f'We have logged in as {client.user}')
 
