@@ -4,7 +4,6 @@ A simple discord bot that shows the current playercount of a game server, mostly
 Features:
 - Users can react to the emoji to force a refresh of the message
 - Cooldown to prevent people from spamming the bot
-- Autorefresh on a configurable interval
 - Simple custom emoji
 - Super low resource usage due to simplicity
 
