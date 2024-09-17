@@ -9,13 +9,32 @@ from dotenv import load_dotenv
 import os
 import json
 
+# Default configuration
+DEFAULT_CONFIG = """
+REFRESH_INTERVAL=10
+API_KEY=YOUR_API_KEY_HERE
+CHANNEL_ID=123456789012345678
+JOIN_URL=https://discord.com/channels/603659242334847016/673625469975003138
+REFRESH_EMOJI=🔄
+SERVERS=[{"ip": "0.0.0.0", "port": 0000}]
+"""
+
+def ensure_env_file_exists():
+    if not os.path.exists('.env'):
+        with open('.env', 'w') as f:
+            f.write(DEFAULT_CONFIG)
+        print("Created default .env file. Please update it with your API_KEY and other settings.")
+
+# Ensure .env file is created if it does not exist
+ensure_env_file_exists()
+
 # Load environment variables from .env file
 load_dotenv()
 
 # Read configurations
 REFRESH_INTERVAL = int(os.getenv('REFRESH_INTERVAL', 10))
 API_KEY = os.getenv('API_KEY')
-CHANNEL_ID = int(os.getenv('CHANNEL'))
+CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
 JOIN_URL = os.getenv('JOIN_URL')
 REFRESH_EMOJI = os.getenv('REFRESH_EMOJI')
 SERVERS = json.loads(os.getenv('SERVERS', '[]'))
