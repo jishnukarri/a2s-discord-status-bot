@@ -1,3 +1,5 @@
-pycord
-python-a2s
+discord.py
+a2s
+python-dotenv
 tabulate
+pyinstaller
