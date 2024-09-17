@@ -27,7 +27,7 @@ jobs:
 
     - name: Create .env file
       run: |
-        echo "REFRESH_INTERVAL=10" >> .env
+        echo "REFRESH_INTERVAL=10" > .env
         echo "API_KEY=${{ secrets.API_KEY }}" >> .env
         echo "CHANNEL_ID=123456789012345678" >> .env
         echo "JOIN_URL=https://discord.com/channels/603659242334847016/673625469975003138" >> .env
@@ -36,11 +36,11 @@ jobs:
 
     - name: Build executable
       run: |
-        pyinstaller --onefile --add-data ".env:."  bot.py
+        pyinstaller --onefile --add-data ".env;." bot.py
 
     - name: Rename executable
       run: |
-        rename dist\bot.exe bot
+        powershell -Command "Rename-Item -Path 'dist/bot.exe' -NewName 'bot.exe'"
 
     - name: Upload executable
       uses: actions/upload-artifact@v3
