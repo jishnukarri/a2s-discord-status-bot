@@ -36,7 +36,7 @@ jobs:
 
     - name: Build executable
       run: |
-        pyinstaller --onefile  bot.py
+        pyinstaller --onefile --add-data ".env:."  bot.py
 
     - name: Rename executable
       run: |
