@@ -1,0 +1,45 @@
+name: Build and Package Python Script
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'  # Specify your Python version
+
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Create .env file
+      run: |
+        echo "REFRESH_INTERVAL=10" >> .env
+        echo "API_KEY=${{ secrets.API_KEY }}" >> .env
+        echo "CHANNEL_ID=123456789012345678" >> .env
+        echo "JOIN_URL=https://discord.com/channels/603659242334847016/673625469975003138" >> .env
+        echo "REFRESH_EMOJI=🔄" >> .env
+        echo "SERVERS=[{\"ip\": \"86.23.213.26\", \"port\": 2101}]" >> .env
+
+    - name: Build executable
+      run: |
+        pyinstaller --onefile --add-data ".env:." bot.py
+
+    - name: Upload executable
+      uses: actions/upload-artifact@v3
+      with:
+        name: bot-executable
+        path: dist/bot
