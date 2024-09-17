@@ -1,11 +1,15 @@
-# a2s-discord-status-bot
-A simple discord bot that shows the current playercount of a game server, mostly intended for source engine games but *should* work with any game that supports A2S
+# discord-server-status-bot
+
+A versatile Discord bot designed to monitor and display the status of game servers, including player counts and server details. Suitable for various types of servers with adjustable configurations.
 
 Features:
-- Users can react to the emoji to force a refresh of the message
-- Cooldown to prevent people from spamming the bot
-- Simple custom emoji
-- Super low resource usage due to simplicity
+- Monitors multiple servers with dynamic updates
+- Shows detailed player information for single server setups
+- Updates server status every 30 seconds
+- Allows users to refresh status by reacting with an emoji
+- Cleans up old messages to maintain a tidy channel
+- Customizable status messages and embeds
+- Handles server errors and status changes gracefully
 
 Example:
 
