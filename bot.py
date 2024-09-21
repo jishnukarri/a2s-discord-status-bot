@@ -8,6 +8,15 @@ from dotenv import load_dotenv
 import os
 import json
 import sys
+import logging
+
+# Set up logging
+log_dir = "logs"
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
+log_file = os.path.join(log_dir, f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)])
 
 # Default configuration
 DEFAULT_CONFIG = """
@@ -23,7 +32,7 @@ def ensure_env_file_exists():
     if not os.path.exists('.env'):
         with open('.env', 'w', encoding='utf-8') as f:
             f.write(DEFAULT_CONFIG.strip())
-        print("Created default .env file. Please update it with your API_KEY and other settings.")
+        logging.info("Created default .env file. Please update it with your API_KEY and other settings.")
         sys.exit()
 
 ensure_env_file_exists()
@@ -55,8 +64,10 @@ def fetch_server_info(a2sIP):
     try:
         return a2s.info(a2sIP), a2s.players(a2sIP)
     except socket.timeout:
+        logging.warning(f"Timeout fetching server info for {a2sIP}")
         return None, None
-    except (ConnectionResetError, OSError, socket.gaierror):
+    except (ConnectionResetError, OSError, socket.gaierror) as e:
+        logging.error(f"Error fetching server info for {a2sIP}: {e}")
         return None, []
 
 def generate_embed(server_ip, server_port):
@@ -104,7 +115,7 @@ async def on_ready():
         await status_message.add_reaction(REFRESH_EMOJI)
         server_messages[index] = status_message
 
-    print(f'We have logged in as {client.user}')
+    logging.info(f'We have logged in as {client.user}')
 
     # Start periodic updates
     while True:
