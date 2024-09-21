@@ -94,6 +94,8 @@ async def on_raw_reaction_add(payload):
 @client.event
 async def on_ready():
     channel = client.get_channel(CHANNEL_ID)
+
+    # Delete previous messages from the bot at startup
     await channel.purge(limit=100, check=lambda m: m.author == client.user)
 
     for index, server in enumerate(SERVERS):
@@ -104,9 +106,10 @@ async def on_ready():
 
     print(f'We have logged in as {client.user}')
 
+    # Start periodic updates
     while True:
         await asyncio.sleep(REFRESH_INTERVAL)
         for index in range(len(SERVERS)):
-            await reset_message(index)
+            await reset_message(index)  # Edit the existing messages
 
 client.run(API_KEY)
