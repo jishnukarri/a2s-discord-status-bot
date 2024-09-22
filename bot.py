@@ -46,8 +46,12 @@ REFRESH_EMOJI = os.getenv('REFRESH_EMOJI')
 SERVERS = json.loads(os.getenv('SERVERS', '[]'))
 
 intents = discord.Intents.default()
-intents.message_content = True  # Ensure message content intent is enabled
+intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Store the number of failed attempts for each server
+server_failure_counts = {i: 0 for i in range(len(SERVERS))}
+max_failures = 5
 
 def format_player_time(seconds):
     if seconds < 60:
@@ -70,38 +74,35 @@ def fetch_server_info(a2sIP):
         return None, []
 
 def generate_embed():
-    description = []
+    online_servers = []
+    
     for index, server in enumerate(SERVERS):
         server_info, server_players = fetch_server_info((server['ip'], server['port']))
 
         if server_info is None:
+            server_failure_counts[index] += 1
             continue  # Skip offline servers
+
+        # Reset failure count if the server is online
+        server_failure_counts[index] = 0
 
         player_count = f"{server_info.player_count}/{server_info.max_players}"
         ply_table = [[ply.name, ply.score, format_player_time(ply.duration)] for ply in server_players if ply.name]
         players_formatted = tabulate(ply_table, headers=["Player", "Score", "Time"], tablefmt="pipe")
-        
-        description.append(f"**Server {index + 1}:** {server_info.server_name} - Players: {player_count} | Players List: ```{players_formatted}```")
 
-    return discord.Embed(title="Server Status", description="\n".join(description) if description else "All servers are offline.", color=0x1A529A)
+        online_servers.append(f"**Server {len(online_servers) + 1}:** {server_info.server_name} - Players: {player_count} | Players List: ```{players_formatted}```")
+
+    description = "\n".join(online_servers) if online_servers else "All servers are offline."
+    return discord.Embed(title="Server Status", description=description, color=0x1A529A)
 
 class ServerStatusView(discord.ui.View):
     def __init__(self, status_message):
         super().__init__(timeout=None)
-        self.status_message = status_message  # Store the status message
+        self.status_message = status_message
 
-        # Create a button for each server to refresh
-        for index in range(len(SERVERS)):
-            self.add_item(discord.ui.Button(label=f"{REFRESH_EMOJI} Refresh Server {index + 1}", 
-                                            style=discord.ButtonStyle.secondary, 
-                                            custom_id=f"refresh_{index}"))
-
-    async def interaction_check(self, interaction: discord.Interaction):
-        button_index = int(interaction.data['custom_id'].split('_')[1])
+    async def refresh_server_info(self):
         embed = generate_embed()  # Generate a new embed for all servers
         await self.status_message.edit(embed=embed)  # Update the status message with the new embed
-        await interaction.response.defer()  # Acknowledge the interaction
-        return True
 
 @bot.event
 async def on_ready():
@@ -113,7 +114,6 @@ async def on_ready():
     embed = generate_embed()  # Generate initial embed for all servers
     status_message = await channel.send(embed=embed)  # Send the initial message
     view = ServerStatusView(status_message)  # Pass the message to the view
-    await status_message.edit(view=view)  # Attach the view to the message
 
     logging.info(f'We have logged in as {bot.user}')
 
@@ -122,5 +122,31 @@ async def on_ready():
         await asyncio.sleep(REFRESH_INTERVAL)
         embed = generate_embed()  # Refresh the embed for all servers
         await status_message.edit(embed=embed)  # Update the embed in the message
+
+        # Get current online servers for emoji assignment
+        online_servers = [
+            i for i in range(len(SERVERS)) 
+            if server_failure_counts[i] < max_failures and fetch_server_info((SERVERS[i]['ip'], SERVERS[i]['port']))[0] is not None
+        ]
+        
+        await status_message.clear_reactions()  # Clear previous reactions
+        for index in online_servers:
+            await status_message.add_reaction(f'{online_servers.index(index) + 1}️⃣')  # Use the new index for emoji
+        await status_message.add_reaction(REFRESH_EMOJI)  # Add refresh emoji
+
+@bot.event
+async def on_reaction_add(reaction, user):
+    if user != bot.user:  # Ignore bot's own reactions
+        if reaction.emoji == REFRESH_EMOJI:
+            view = ServerStatusView(reaction.message)
+            await view.refresh_server_info()  # Refresh server info on reaction
+        else:
+            # Handle server-specific refresh based on the number emoji
+            index = int(reaction.emoji[0]) - 1  # Extract index from emoji
+            if 0 <= index < len(SERVERS):
+                server_info, server_players = fetch_server_info((SERVERS[index]['ip'], SERVERS[index]['port']))
+                if server_info:
+                    embed = generate_embed()  # Refresh embed with server info
+                    await reaction.message.edit(embed=embed)
 
 bot.run(API_KEY)
