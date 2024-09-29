@@ -3,7 +3,6 @@ import a2s
 import datetime
 import socket
 import asyncio
-from discord.ext import commands
 from tabulate import tabulate
 from dotenv import load_dotenv
 import os
@@ -24,6 +23,7 @@ DEFAULT_CONFIG = """
 REFRESH_INTERVAL=10
 API_KEY=YOUR_API_KEY_HERE
 CHANNEL_ID=123456789012345678
+JOIN_URL=https://discord.com/channels/603659242334847016/673625469975003138
 REFRESH_EMOJI=🔄
 SERVERS=[{"ip": "0.0.0.0", "port": 0000}]
 """
@@ -42,16 +42,13 @@ load_dotenv()
 REFRESH_INTERVAL = int(os.getenv('REFRESH_INTERVAL', 10))
 API_KEY = os.getenv('API_KEY')
 CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
+JOIN_URL = os.getenv('JOIN_URL')
 REFRESH_EMOJI = os.getenv('REFRESH_EMOJI')
 SERVERS = json.loads(os.getenv('SERVERS', '[]'))
 
 intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents)
-
-# Store the number of failed attempts for each server
-server_failure_counts = {i: 0 for i in range(len(SERVERS))}
-max_failures = 5
+client = discord.Client(intents=intents)
+server_messages = {}
 
 def format_player_time(seconds):
     if seconds < 60:
@@ -73,80 +70,68 @@ def fetch_server_info(a2sIP):
         logging.error(f"Error fetching server info for {a2sIP}: {e}")
         return None, []
 
-def generate_embed():
-    online_servers = []
+def generate_embed(server_ip, server_port):
+    a2sIP = (server_ip, server_port)
+    server_info, server_players = fetch_server_info(a2sIP)
+
+    if server_info is None:
+        return discord.Embed(title="Server down", color=0xFF0000, description="The server is currently down.", timestamp=datetime.datetime.now())
+
+    ply_table = [[ply.name, ply.score, format_player_time(ply.duration)] for ply in server_players if ply.name]
+    players_formatted = tabulate(ply_table, headers=["Player", "Score", "Time"], tablefmt="presto")
     
-    for index, server in enumerate(SERVERS):
-        server_info, server_players = fetch_server_info((server['ip'], server['port']))
+    description = (f"Player count: {server_info.player_count}/{server_info.max_players}\n"
+                   f"Map: {server_info.map_name}\n"
+                   f"```{players_formatted}```\n"
+                   f"[Join server]({JOIN_URL})")
+    return discord.Embed(title=server_info.server_name, color=0x00FF00, description=description, timestamp=datetime.datetime.now())
 
-        if server_info is None:
-            server_failure_counts[index] += 1
-            continue  # Skip offline servers
+async def reset_message(server_index):
+    message = server_messages.get(server_index)
+    if message:
+        await message.clear_reactions()
+        server = SERVERS[server_index]
+        await message.edit(embed=generate_embed(server["ip"], server["port"]))
+        await message.add_reaction(REFRESH_EMOJI)
 
-        # Reset failure count if the server is online
-        server_failure_counts[index] = 0
+@client.event
+async def on_raw_reaction_add(payload):
+    if payload.event_type == "REACTION_ADD" and payload.channel_id == CHANNEL_ID and payload.member != client.user:
+        for index, msg in server_messages.items():
+            if payload.message_id == msg.id:
+                await reset_message(index)
+                break
 
-        player_count = f"{server_info.player_count}/{server_info.max_players}"
-        ply_table = [[ply.name, ply.score, format_player_time(ply.duration)] for ply in server_players if ply.name]
-        players_formatted = tabulate(ply_table, headers=["Player", "Score", "Time"], tablefmt="pipe")
-
-        online_servers.append(f"**Server {len(online_servers) + 1}:** {server_info.server_name} - Players: {player_count} | Players List: ```{players_formatted}```")
-
-    description = "\n".join(online_servers) if online_servers else "All servers are offline."
-    return discord.Embed(title="Server Status", description=description, color=0x1A529A)
-
-class ServerStatusView(discord.ui.View):
-    def __init__(self, status_message):
-        super().__init__(timeout=None)
-        self.status_message = status_message
-
-    async def refresh_server_info(self):
-        embed = generate_embed()  # Generate a new embed for all servers
-        await self.status_message.edit(embed=embed)  # Update the status message with the new embed
-
-@bot.event
+@client.event
 async def on_ready():
-    channel = bot.get_channel(CHANNEL_ID)
+    channel = client.get_channel(CHANNEL_ID)
 
     # Delete previous messages from the bot at startup
-    await channel.purge(limit=100, check=lambda m: m.author == bot.user)
+    await channel.purge(limit=100, check=lambda m: m.author == client.user)
 
-    embed = generate_embed()  # Generate initial embed for all servers
-    status_message = await channel.send(embed=embed)  # Send the initial message
-    view = ServerStatusView(status_message)  # Pass the message to the view
+    for index, server in enumerate(SERVERS):
+        embed = generate_embed(server["ip"], server["port"])
+        status_message = await channel.send(embed=embed)
+        await status_message.add_reaction(REFRESH_EMOJI)
+        server_messages[index] = status_message
 
-    logging.info(f'We have logged in as {bot.user}')
+    logging.info(f'We have logged in as {client.user}')
 
     # Start periodic updates
+    asyncio.create_task(periodic_updates())
+    asyncio.create_task(restart_bot_after_interval())  # Schedule bot restart every 24 hours
+
+async def periodic_updates():
     while True:
         await asyncio.sleep(REFRESH_INTERVAL)
-        embed = generate_embed()  # Refresh the embed for all servers
-        await status_message.edit(embed=embed)  # Update the embed in the message
+        for index in range(len(SERVERS)):
+            await reset_message(index)  # Edit the existing messages
 
-        # Get current online servers for emoji assignment
-        online_servers = [
-            i for i in range(len(SERVERS)) 
-            if server_failure_counts[i] < max_failures and fetch_server_info((SERVERS[i]['ip'], SERVERS[i]['port']))[0] is not None
-        ]
-        
-        await status_message.clear_reactions()  # Clear previous reactions
-        for index in online_servers:
-            await status_message.add_reaction(f'{online_servers.index(index) + 1}️⃣')  # Use the new index for emoji
-        await status_message.add_reaction(REFRESH_EMOJI)  # Add refresh emoji
+async def restart_bot_after_interval():
+    while True:
+        await asyncio.sleep(86400)  # Wait for 24 hours
+        logging.info("Restarting bot after 24 hours.")
+        await client.close()  # Close the bot connection
+        os.execv(sys.executable, ['python'] + sys.argv)  # Restart the script
 
-@bot.event
-async def on_reaction_add(reaction, user):
-    if user != bot.user:  # Ignore bot's own reactions
-        if reaction.emoji == REFRESH_EMOJI:
-            view = ServerStatusView(reaction.message)
-            await view.refresh_server_info()  # Refresh server info on reaction
-        else:
-            # Handle server-specific refresh based on the number emoji
-            index = int(reaction.emoji[0]) - 1  # Extract index from emoji
-            if 0 <= index < len(SERVERS):
-                server_info, server_players = fetch_server_info((SERVERS[index]['ip'], SERVERS[index]['port']))
-                if server_info:
-                    embed = generate_embed()  # Refresh embed with server info
-                    await reaction.message.edit(embed=embed)
-
-bot.run(API_KEY)
+client.run(API_KEY)
