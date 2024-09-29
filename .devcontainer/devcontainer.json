@@ -1,0 +1,9 @@
+{
+    "name": "Python Development",
+    "image": "mcr.microsoft.com/devcontainers/python:3.12",
+    "features": {
+      "python": "latest"
+    },
+    "postCreateCommand": "apt-get update && apt-get install -y python3-dev"
+  }
+  

@@ -15,4 +15,4 @@ A versatile Discord bot designed to monitor and display the status of game serve
 For a hassle-free installation, please download the executable file from the [Releases](https://github.com/jishnukarri/a2s-discord-status-bot/releases) section of the repository.
 
 ## Example:
-![image](https://user-images.githubusercontent.com/69946827/176722704-f91a2050-6455-44e7-973f-e3ce3c276bb5.png)
+![image](screeenshort.png)
