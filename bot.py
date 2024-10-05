@@ -10,7 +10,6 @@ import os
 import json
 import sys
 import logging
-import os
 
 # Set up logging
 log_dir = "logs"
@@ -88,13 +87,25 @@ def generate_embed():
         server_failure_counts[index] = 0
 
         player_count = f"{server_info.player_count}/{server_info.max_players}"
-        ply_table = [[ply.name, ply.score, format_player_time(ply.duration)] for ply in server_players if ply.name]
+
+        # Sort players by score (kills) in descending order
+        sorted_players = sorted(server_players, key=lambda ply: ply.score, reverse=True)
+
+        ply_table = [[ply.name, ply.score, format_player_time(ply.duration)] for ply in sorted_players if ply.name]
         players_formatted = tabulate(ply_table, headers=["Player", "Score", "Time"], tablefmt="pipe")
 
         online_servers.append(f"**Server {len(online_servers) + 1}:** {server_info.server_name} - Players: {player_count} | Players List: ```{players_formatted}```")
 
     description = "\n".join(online_servers) if online_servers else "All servers are offline."
-    return discord.Embed(title="Server Status", description=description, color=0x1A529A)
+    
+    # Get the current time for the footer
+    last_updated_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    right_aligned_footer = f"{' ' * 50}Last updated: {last_updated_time}"
+
+    embed = discord.Embed(title="Server Status", description=description, color=0x1A529A)
+    embed.set_footer(text=right_aligned_footer)  # Add timestamp to footer
+
+    return embed
 
 class ServerStatusView(discord.ui.View):
     def __init__(self, status_message):
@@ -104,16 +115,6 @@ class ServerStatusView(discord.ui.View):
     async def refresh_server_info(self):
         embed = generate_embed()  # Generate a new embed for all servers
         await self.status_message.edit(embed=embed)  # Update the status message with the new embed
-
-async def restart_bot():
-    await bot.close()  # Close the bot
-    os.execv(sys.executable, ['python'] + sys.argv)  # Restart the bot
-
-async def periodic_restart():
-    while True:
-        await asyncio.sleep(86400)  # Wait for 24 hours
-        logging.info("Restarting the bot...")
-        await restart_bot()
 
 @bot.event
 async def on_ready():
@@ -129,7 +130,6 @@ async def on_ready():
     logging.info(f'We have logged in as {bot.user}')
 
     # Start periodic updates
-    bot.loop.create_task(periodic_restart())  # Start the restart task
     while True:
         await asyncio.sleep(REFRESH_INTERVAL)
         embed = generate_embed()  # Refresh the embed for all servers
@@ -140,11 +140,21 @@ async def on_ready():
             i for i in range(len(SERVERS)) 
             if server_failure_counts[i] < max_failures and fetch_server_info((SERVERS[i]['ip'], SERVERS[i]['port']))[0] is not None
         ]
-        
-        await status_message.clear_reactions()  # Clear previous reactions
+
+        # Clear reactions only if online server state changes
+        existing_reactions = [str(reaction.emoji) for reaction in status_message.reactions]
+        expected_reactions = [f'{i + 1}️⃣' for i in range(len(online_servers))] + [REFRESH_EMOJI]
+
+        if set(existing_reactions) != set(expected_reactions):
+            await status_message.clear_reactions()  # Clear previous reactions only if needed
+
         for index in online_servers:
-            await status_message.add_reaction(f'{online_servers.index(index) + 1}️⃣')  # Use the new index for emoji
-        await status_message.add_reaction(REFRESH_EMOJI)  # Add refresh emoji
+            emoji = f'{online_servers.index(index) + 1}️⃣'
+            if emoji not in existing_reactions:
+                await status_message.add_reaction(emoji)  # Add only missing emojis
+
+        if REFRESH_EMOJI not in existing_reactions:
+            await status_message.add_reaction(REFRESH_EMOJI)  # Add refresh emoji if not present
 
 @bot.event
 async def on_reaction_add(reaction, user):
