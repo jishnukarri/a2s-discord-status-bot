@@ -3,8 +3,7 @@ import PyInstaller.__main__
 
 # Configuration
 SCRIPT_NAME = "bot.py"
-ICON_PATH = "icon.ico"  # Optional: Path to your icon file
-VERSION_INFO = "version_info.txt"  # Optional: Path to your version info file
+ICON_PATH = r"D:\Github Projects\a2s-discord-status-bot\icon.ico"  # Optional: Path to your icon file
 
 # Output directories
 OUTPUT_DIR_BACKGROUND = "build/background"
@@ -23,7 +22,6 @@ PyInstaller.__main__.run([
     '--workpath', os.path.join(OUTPUT_DIR_BACKGROUND, 'temp'),
     '--specpath', OUTPUT_DIR_BACKGROUND,
     '--icon', ICON_PATH,  # Optional: Add an icon
-    '--version-file', VERSION_INFO,  # Optional: Add version info
     SCRIPT_NAME
 ])
 
@@ -35,7 +33,6 @@ PyInstaller.__main__.run([
     '--workpath', os.path.join(OUTPUT_DIR_CONSOLE, 'temp'),
     '--specpath', OUTPUT_DIR_CONSOLE,
     '--icon', ICON_PATH,  # Optional: Add an icon
-    '--version-file', VERSION_INFO,  # Optional: Add version info
     SCRIPT_NAME
 ])
 
