@@ -3,7 +3,7 @@ import PyInstaller.__main__
 
 # Configuration
 SCRIPT_NAME = "bot.py"  # Replace with your main script file
-ICON_PATH = r"icon.ico"  # Replace with the path to your icon file (optional)
+ICON_PATH = "icon.ico"  # Replace with the path to your icon file (optional)
 
 # Output directories
 OUTPUT_DIR_BACKGROUND = "build/background"
@@ -22,7 +22,6 @@ PyInstaller.__main__.run([
     '--workpath', os.path.join(OUTPUT_DIR_BACKGROUND, 'temp'),
     '--specpath', OUTPUT_DIR_BACKGROUND,
     '--icon', ICON_PATH,  # Optional: Add an icon
-    '--name', 'discord_bot_background',  # Name the output file
     SCRIPT_NAME
 ])
 
@@ -34,7 +33,6 @@ PyInstaller.__main__.run([
     '--workpath', os.path.join(OUTPUT_DIR_CONSOLE, 'temp'),
     '--specpath', OUTPUT_DIR_CONSOLE,
     '--icon', ICON_PATH,  # Optional: Add an icon
-    '--name', 'discord_bot',  # Name the output file
     SCRIPT_NAME
 ])
 
