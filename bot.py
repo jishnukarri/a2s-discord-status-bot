@@ -1,288 +1,340 @@
 import discord
 import a2s
 import datetime
-import socket
 import asyncio
 import os
 import json
-import sys
 import logging
-import tkinter as tk
-from tkinter import scrolledtext
+import sqlite3
 from discord.ext import commands
-from tabulate import tabulate
 from dotenv import load_dotenv
-import threading
+from collections import defaultdict
 
-
-# Create a 'logs' directory if it doesn't exist for saving logs
-if not os.path.exists('logs'):
-    os.makedirs('logs')
-
-# Generate a timestamp for the log filename to avoid overwriting
-current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-log_filename = f'logs/bot_{current_time}.log'
-
-# Set up detailed logging configuration with the timestamped filename
-logging.basicConfig(
-    filename=log_filename,
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-)
-
-class TkinterLogHandler(logging.Handler):
-    """Custom logging handler to write log messages to a Tkinter Text widget."""
-    def __init__(self, text_widget):
-        super().__init__()
-        self.text_widget = text_widget
-
-    def emit(self, record):
-        log_entry = self.format(record)
-        self.text_widget.insert(tk.END, log_entry + '\n')
-        self.text_widget.yview(tk.END)  # Auto-scroll to the bottom
-# Default configuration
-DEFAULT_CONFIG = """
-REFRESH_INTERVAL=10
-API_KEY=YOUR_API_KEY_HERE
-CHANNEL_ID=123456789012345678
-REFRESH_EMOJI=🔄
-SERVERS=[{"ip": "0.0.0.0", "port": 0000}]
+# Custom markdown text (you can modify this)
+CUSTOM_TITLE = "THIS BOT PING IS FROM THE UK 🇬🇧"
+CUSTOM_TEXT = """
+**DM Brenner650 or any Helpers to join our servers!  🎮**
 """
 
-def ensure_env_file_exists():
-    """Ensure the .env file exists and contains default configurations."""
-    if not os.path.exists('.env'):
-        with open('.env', 'w', encoding='utf-8') as f:
-            f.write(DEFAULT_CONFIG.strip())
-        logging.info("Created default .env file. Please update it with your API_KEY and other settings.")
-        sys.exit()
+# Configure logging (separate system)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('bot_runtime.log'),
+        logging.StreamHandler()
+    ]
+)
 
-ensure_env_file_exists()
+# Load configuration
 load_dotenv()
-
-# Read configurations from .env file
-REFRESH_INTERVAL = int(os.getenv('REFRESH_INTERVAL', 10))
-API_KEY = os.getenv('API_KEY')
-CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
-REFRESH_EMOJI = os.getenv('REFRESH_EMOJI')
-SERVERS = json.loads(os.getenv('SERVERS', '[]'))
+CONFIG = {
+    'REFRESH_INTERVAL': int(os.getenv('REFRESH_INTERVAL', 10)),
+    'API_KEY': os.getenv('API_KEY'),
+    'CHANNEL_ID': int(os.getenv('CHANNEL_ID')),
+    'SERVERS': json.loads(os.getenv('SERVERS', '[]')),
+    'QUERY_TIMEOUT': 5,
+    'DATABASE_FILE': 'bot_data.db',
+    'MAX_RETRIES': 3
+}
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
-run = False
 
-# Store the number of failed attempts for each server
-server_failure_counts = {i: 0 for i in range(len(SERVERS))}
-max_failures = 5
-
-def format_player_time(seconds):
-    """Format the time a player has been online into a human-readable format."""
-    if seconds < 60:
-        return f"{int(seconds)} seconds"
-    elif seconds < 3600:
-        return f"{int(seconds // 60)} minutes"
-    else:
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        return f"{hours}h {minutes}m"
-
-def fetch_server_info(a2sIP):
-    """Fetch server info using the a2s module."""
-    logging.info(f"Attempting to fetch server info for IP: {a2sIP}")
-    try:
-        server_info = a2s.info(a2sIP)
-        server_players = a2s.players(a2sIP)
-        logging.info(f"Successfully fetched server info for {a2sIP}")
-        return server_info, server_players
-    except socket.timeout:
-        logging.warning(f"Timeout while fetching server info for {a2sIP}")
-        return None, None
-    except (ConnectionResetError, OSError, socket.gaierror) as e:
-        logging.error(f"Error fetching server info for {a2sIP}: {e}")
-        return None, []
-
-def generate_embed():
-    """Generate a Discord embed with server status information."""
-    logging.info("Generating embed with server information")
-    online_servers = []
+# Database setup
+def init_db():
+    """Initialize SQLite database"""
+    conn = sqlite3.connect(CONFIG['DATABASE_FILE'])
+    cursor = conn.cursor()
     
-    for index, server in enumerate(SERVERS):
-        logging.info(f"Fetching info for server {index + 1} with IP {server['ip']}:{server['port']}")
-        server_info, server_players = fetch_server_info((server['ip'], server['port']))
-
-        if server_info is None:
-            server_failure_counts[index] += 1
-            logging.warning(f"Server {index + 1} is offline or failed to respond. Failure count: {server_failure_counts[index]}")
-            continue  # Skip offline servers
-
-        # Reset failure count if the server is online
-        server_failure_counts[index] = 0
-
-        player_count = f"{server_info.player_count}/{server_info.max_players}"
-
-        # Sort players by score in descending order
-        sorted_players = sorted(server_players, key=lambda ply: ply.score, reverse=True)
-
-        ply_table = [[ply.name, ply.score, format_player_time(ply.duration)] for ply in sorted_players if ply.name]
-        players_formatted = tabulate(ply_table, headers=["Player", "Score", "Time"], tablefmt="pipe")
-
-        online_servers.append(f"**Server {len(online_servers) + 1}:** {server_info.server_name} - Players: {player_count} | Players List: ```{players_formatted}```")
-        logging.info(f"Server {index + 1} - {server_info.server_name} is online with {player_count} players.")
-
-    description = "\n".join(online_servers) if online_servers else "All servers are offline."
-    embed = discord.Embed(title="Server Status", description=description, color=0x1A529A)
-    embed.timestamp = datetime.datetime.now()  # Add timestamp in users' local time
-    embed.set_footer(text='\u200b', icon_url="https://i.imgur.com/AfHhftk.jpeg")
-    logging.info("Embed generated successfully")
-
-    return embed
-
-class ServerStatusView(discord.ui.View):
-    """Handles interactions with the server status message."""
-    def __init__(self, status_message):
-        super().__init__(timeout=None)
-        self.status_message = status_message
-
-    async def refresh_server_info(self):
-        """Refresh server information when triggered by emoji reaction."""
-        logging.info("Refreshing server information on emoji reaction")
-        embed = generate_embed()
-        await self.status_message.edit(embed=embed)
-        logging.info("Server information refreshed successfully")
-
-async def setup_initial_reactions(status_message):
-    """Adds number emojis and refresh emoji to the status message initially."""
-    # Get list of active servers (those that are online and haven't exceeded the max failures)
-    online_servers = [
-        i for i in range(len(SERVERS)) 
-        if server_failure_counts[i] < max_failures and fetch_server_info((SERVERS[i]['ip'], SERVERS[i]['port']))[0] is not None
-    ]
+    # Create tables if they don't exist
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY,
+            message_id TEXT,
+            channel_id TEXT,
+            type TEXT
+        )
+    ''')
     
-    # Reassign emojis to active servers, renumbering them starting from 1
-    for index in range(len(online_servers)):
-        emoji = f'{index + 1}️⃣'  # Emoji is dynamically numbered
-        await status_message.add_reaction(emoji)
-        logging.info(f"Added emoji {emoji} for Server {index + 1}")
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS leaderboard (
+            player_name TEXT PRIMARY KEY,
+            kills INTEGER,
+            time_played INTEGER,
+            last_seen TEXT
+        )
+    ''')
     
-    await status_message.add_reaction(REFRESH_EMOJI)
-    logging.info("Added refresh emoji")
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS monthly_leaderboard (
+            player_name TEXT PRIMARY KEY,
+            kills INTEGER,
+            time_played INTEGER
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
 
-async def sync_reactions(status_message):
-    """Synchronizes reactions based on current online server status."""
-    # Get list of active servers (those that are online and haven't exceeded the max failures)
-    online_servers = [
-        i for i in range(len(SERVERS)) 
-        if server_failure_counts[i] < max_failures and fetch_server_info((SERVERS[i]['ip'], SERVERS[i]['port']))[0] is not None
-    ]
+init_db()
 
-    # Define the reactions we expect based on online servers
-    expected_reactions = [f'{i + 1}️⃣' for i in range(len(online_servers))] + [REFRESH_EMOJI]
-    existing_reactions = [str(reaction.emoji) for reaction in status_message.reactions]
+class DataManager:
+    """Handles all database operations"""
+    @staticmethod
+    def save_message(message_id, channel_id, message_type):
+        """Save message info to database"""
+        with sqlite3.connect(CONFIG['DATABASE_FILE']) as conn:
+            conn.execute('''
+                INSERT OR REPLACE INTO messages (message_id, channel_id, type)
+                VALUES (?, ?, ?)
+            ''', (message_id, channel_id, message_type))
+    
+    @staticmethod
+    def get_message(message_type):
+        """Retrieve message info from database"""
+        with sqlite3.connect(CONFIG['DATABASE_FILE']) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT message_id, channel_id FROM messages WHERE type = ?', (message_type,))
+            return cursor.fetchone()
+    
+    @staticmethod
+    def save_leaderboard(player_stats, monthly_stats):
+        """Save leaderboard data"""
+        with sqlite3.connect(CONFIG['DATABASE_FILE']) as conn:
+            # Save main leaderboard
+            conn.executemany('''
+                INSERT OR REPLACE INTO leaderboard (player_name, kills, time_played, last_seen)
+                VALUES (?, ?, ?, ?)
+            ''', [(name, stats.kills, stats.time_played, stats.last_seen.isoformat()) 
+                  for name, stats in player_stats.items()])
+            
+            # Save monthly leaderboard
+            conn.executemany('''
+                INSERT OR REPLACE INTO monthly_leaderboard (player_name, kills, time_played)
+                VALUES (?, ?, ?)
+            ''', [(name, stats.kills, stats.time_played) 
+                  for name, stats in monthly_stats.items()])
+    
+    @staticmethod
+    def load_leaderboard():
+        """Load leaderboard data"""
+        with sqlite3.connect(CONFIG['DATABASE_FILE']) as conn:
+            cursor = conn.cursor()
+            
+            # Load main leaderboard
+            cursor.execute('SELECT player_name, kills, time_played, last_seen FROM leaderboard')
+            player_stats = {
+                row[0]: PlayerStats(row[1], row[2], datetime.datetime.fromisoformat(row[3]))
+                for row in cursor.fetchall()
+            }
+            
+            # Load monthly leaderboard
+            cursor.execute('SELECT player_name, kills, time_played FROM monthly_leaderboard')
+            monthly_stats = {
+                row[0]: PlayerStats(row[1], row[2]) 
+                for row in cursor.fetchall()
+            }
+            
+            return player_stats, monthly_stats
 
-    # Clear all reactions if there's any server state change
-    if set(existing_reactions) != set(expected_reactions):
-        await status_message.clear_reactions()  # Clear all reactions
-        logging.info("Cleared reactions due to server state change")
+class PlayerStats:
+    """Tracks player statistics"""
+    def __init__(self, kills=0, time_played=0, last_seen=None):
+        self.kills = kills
+        self.time_played = time_played
+        self.last_seen = last_seen or datetime.datetime.now()
 
-        # Re-add the correct emojis based on active servers
-        for index in range(len(online_servers)):
-            emoji = f'{index + 1}️⃣'
-            await status_message.add_reaction(emoji)  # Add the emojis in the correct order
-            logging.info(f"Re-added emoji {emoji} for Server {index + 1}")
+class ServerMonitor:
+    def __init__(self):
+        self.status_message = None
+        self.leaderboard_message = None
+        self.server_data = {}
+        self.player_stats, self.monthly_leaderboard = DataManager.load_leaderboard()
+        self.last_reset = datetime.datetime.now()
+        self.keycap_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟']
 
-        # Always ensure the refresh emoji is added
-        if REFRESH_EMOJI not in existing_reactions:
-            await status_message.add_reaction(REFRESH_EMOJI)
-            logging.info("Re-added refresh emoji")
+    async def query_server(self, address):
+        """Query game server with retries"""
+        for attempt in range(CONFIG['MAX_RETRIES']):
+            try:
+                info = await asyncio.wait_for(a2s.ainfo(address), timeout=CONFIG['QUERY_TIMEOUT'])
+                players = await asyncio.wait_for(a2s.aplayers(address), timeout=CONFIG['QUERY_TIMEOUT'])
+                return info, players, round(info.ping * 1000)  # Return ping in milliseconds
+            except Exception as e:
+                logging.warning(f"Attempt {attempt + 1} failed for {address}: {str(e)}")
+                await asyncio.sleep(1)
+        return None, [], None
 
-        # Ensure that all expected emojis are added in the right order
-        logging.info("Reactions synchronized successfully")
+    async def update_all_servers(self):
+        """Update all servers concurrently"""
+        tasks = []
+        for server in CONFIG['SERVERS']:
+            address = (server['ip'], server['port'])
+            tasks.append(self.update_single_server(address))
+        
+        await asyncio.gather(*tasks)
+        self.check_monthly_reset()
+        DataManager.save_leaderboard(self.player_stats, self.monthly_leaderboard)
+
+    async def update_single_server(self, address):
+        """Update single server status and player stats"""
+        info, players, ping = await self.query_server(address)
+        if info:
+            self.server_data[address] = (info, players, ping)
+            self.update_player_stats(players)
+
+    def update_player_stats(self, players):
+        """Update player statistics"""
+        for player in players:
+            if player.name:
+                stats = self.player_stats.get(player.name, PlayerStats())
+                stats.kills = max(stats.kills, player.score)
+                stats.time_played += 1
+                stats.last_seen = datetime.datetime.now()
+                self.player_stats[player.name] = stats
+
+                # Update monthly stats
+                monthly_stats = self.monthly_leaderboard.get(player.name, PlayerStats())
+                monthly_stats.kills = max(monthly_stats.kills, player.score)
+                monthly_stats.time_played += 1
+                self.monthly_leaderboard[player.name] = monthly_stats
+
+    def format_server_status(self):
+        """Create status embed with online servers and custom text"""
+        embed = discord.Embed(title="🟢 Online Servers", color=0x1A529A)
+        
+        # Add custom markdown text
+        embed.add_field(
+            name=CUSTOM_TITLE,
+            value=CUSTOM_TEXT,
+            inline=False
+        )
+        
+        # Add server status
+        for idx, (address, (info, players, ping)) in enumerate(self.server_data.items()):
+            if info:
+                player_list = "\n".join([f"• {p.name} - {p.score} kills" for p in players if p.name])
+                embed.add_field(
+                    name=f"{self.keycap_emojis[idx]} {info.server_name} ({info.player_count}/{info.max_players}) | Ping: {ping}ms",
+                    value=f"Map: {info.map_name}\nPlayers:\n{player_list}",
+                    inline=False
+                )
+
+        embed.set_footer(text='\u200b', icon_url="https://i.imgur.com/AfHhftk.jpeg")
+        embed.timestamp = datetime.datetime.now()
+        return embed
+
+    def format_leaderboard(self):
+        """Create leaderboard embed"""
+        leaderboard = sorted(
+            self.player_stats.items(),
+            key=lambda x: (x[1].kills, x[1].time_played),
+            reverse=True
+        )[:10]
+
+        embed = discord.Embed(title="🏆 Player Leaderboard", color=0xFFD700)
+        for rank, (name, stats) in enumerate(leaderboard, 1):
+            embed.add_field(
+                name=f"{self.get_rank_emoji(rank)} {name}",
+                value=f"Kills: {stats.kills} | Time: {stats.time_played} mins",
+                inline=False
+            )
+
+        embed.set_footer(text='\u200b', icon_url="https://i.imgur.com/AfHhftk.jpeg")
+        embed.timestamp = datetime.datetime.now()
+        return embed
+
+    def get_rank_emoji(self, rank):
+        """Get rank emoji for leaderboard"""
+        emojis = {1: '🥇', 2: '🥈', 3: '🥉'}
+        return emojis.get(rank, '🔹')
+
+    def check_monthly_reset(self):
+        """Reset monthly leaderboard at month end"""
+        now = datetime.datetime.now()
+        if now.month != self.last_reset.month:
+            self.monthly_leaderboard.clear()
+            self.last_reset = now
+            logging.info("Monthly leaderboard reset")
+
+monitor = ServerMonitor()
 
 @bot.event
 async def on_ready():
-    """Event triggered when the bot successfully connects to Discord."""
-    logging.info(f"Bot connected as {bot.user}")
-    
-    channel = bot.get_channel(CHANNEL_ID)
-    await channel.purge(limit=100, check=lambda m: m.author == bot.user)
-    logging.info("Purged previous bot messages on startup")
+    """Initialize bot when connected"""
+    logging.info(f'Logged in as {bot.user}')
+    try:
+        channel = bot.get_channel(CONFIG['CHANNEL_ID'])
+        
+        # Clean up previous bot messages
+        async for message in channel.history(limit=100):
+            if message.author == bot.user:
+                try:
+                    await message.delete()
+                    logging.info(f"Deleted old bot message: {message.id}")
+                except discord.NotFound:
+                    logging.warning(f"Message {message.id} already deleted")
+                except discord.Forbidden:
+                    logging.error(f"Missing permissions to delete message {message.id}")
+                except Exception as e:
+                    logging.error(f"Error deleting message {message.id}: {str(e)}")
+        
+        # Create new leaderboard message
+        monitor.leaderboard_message = await channel.send("Updating leaderboard...")
+        DataManager.save_message(monitor.leaderboard_message.id, CONFIG['CHANNEL_ID'], 'leaderboard')
+        
+        # Create new status message
+        monitor.status_message = await channel.send("Updating server status...")
+        DataManager.save_message(monitor.status_message.id, CONFIG['CHANNEL_ID'], 'status')
+        
+        # Start update loop
+        bot.loop.create_task(status_update_loop())
+    except Exception as e:
+        logging.error(f"Initialization failed: {str(e)}")
 
-    # Send the initial embed and setup emojis
-    embed = generate_embed()
-    status_message = await channel.send(embed=embed)
-    logging.info("Sent initial server status message")
-    
-    await setup_initial_reactions(status_message)
-    logging.info("Initial emoji reactions added")
-
-    # Start a persistent loop for periodic updates
-    global run
-    run = True
-    while True:  # Keeps running unless manually stopped
+async def status_update_loop():
+    """Main update loop with error handling"""
+    while True:
         try:
-            await asyncio.sleep(REFRESH_INTERVAL)
-            embed = generate_embed()
-            await status_message.edit(embed=embed)
-            logging.info("Updated server status embed")
-
-            await sync_reactions(status_message)
+            await monitor.update_all_servers()
+            
+            # Update leaderboard first
+            try:
+                await monitor.leaderboard_message.edit(
+                    content="",
+                    embed=monitor.format_leaderboard()
+                )
+            except discord.NotFound:
+                logging.warning("Leaderboard message deleted, creating a new one")
+                channel = bot.get_channel(CONFIG['CHANNEL_ID'])
+                monitor.leaderboard_message = await channel.send(embed=monitor.format_leaderboard())
+                DataManager.save_message(monitor.leaderboard_message.id, CONFIG['CHANNEL_ID'], 'leaderboard')
+            
+            # Update server status
+            try:
+                await monitor.status_message.edit(
+                    content="",
+                    embed=monitor.format_server_status()
+                )
+            except discord.NotFound:
+                logging.warning("Status message deleted, creating a new one")
+                channel = bot.get_channel(CONFIG['CHANNEL_ID'])
+                monitor.status_message = await channel.send(embed=monitor.format_server_status())
+                DataManager.save_message(monitor.status_message.id, CONFIG['CHANNEL_ID'], 'status')
+            
+            await asyncio.sleep(CONFIG['REFRESH_INTERVAL'])
         except Exception as e:
-            logging.error(f"Exception in main loop: {e}")
-            continue  # Keep the loop alive even after exceptions
-
-@bot.event
-async def on_disconnect():
-    """Event triggered when the bot disconnects from Discord."""
-    global run
-    run = False
-    logging.warning("Bot disconnected from Discord")
-
-def start_bot():
-    """Start the bot in a separate thread."""
-    asyncio.run(bot.start(API_KEY))
-
-def stop_bot():
-    """Stop the bot gracefully."""
-    asyncio.run(bot.logout())
-
-def restart_bot():
-    """Restart the bot."""
-    stop_bot()
-    start_bot()
-
-# GUI implementation
-class BotGUI(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("Discord Bot GUI")
-        self.geometry("600x400")
-
-        # Create log area
-        self.log_area = scrolledtext.ScrolledText(self, wrap=tk.WORD)
-        self.log_area.pack(expand=True, fill=tk.BOTH)
-
-        # Set up logging to the GUI
-        log_handler = TkinterLogHandler(self.log_area)
-        log_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        logging.getLogger().addHandler(log_handler)
-        logging.getLogger().setLevel(logging.INFO)
-
-        # Start the bot automatically without buttons
-        self.start_bot()
-
-    def start_bot(self):
-        """Starts the bot on the GUI thread."""
-        logging.info("Starting bot...")
-        self.thread = threading.Thread(target=start_bot)
-        self.thread.start()
-
-    def on_closing(self):
-        """Ensure bot stops when the window is closed."""
-        logging.info("Exiting application...")
-        stop_bot()
-        self.destroy()
+            logging.error(f"Update error: {str(e)}")
+            await asyncio.sleep(CONFIG['REFRESH_INTERVAL'])
 
 if __name__ == "__main__":
-    app = BotGUI()
-    app.mainloop()
+    try:
+        bot.run(CONFIG['API_KEY'])
+    except KeyboardInterrupt:
+        logging.info("Bot shutdown requested")
+    except Exception as e:
+        logging.error(f"Critical error: {str(e)}")
+    finally:
+        logging.info("Bot process terminated")
