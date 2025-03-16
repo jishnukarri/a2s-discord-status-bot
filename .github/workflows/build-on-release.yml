@@ -2,59 +2,39 @@ name: Build on Commit
 
 on:
   push:
-    branches:
-      - master  # Trigger on every commit to the main branch
+    branches: [master]
 
 jobs:
   build:
-    runs-on: windows-latest  # Use the latest Windows runner
+    runs-on: windows-latest
 
     steps:
-      # Check out the repository
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Set up Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'  # Use Python 3.9
+          python-version: '3.9'
 
-      # Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # Create output directories and copy icon.ico
-      - name: Prepare build directories
-        run: |
-          mkdir build\background
-          mkdir build\console
-          copy icon.ico build\background\icon.ico
-          copy icon.ico build\console\icon.ico
-
-      # Run the build script
       - name: Build executables
         run: |
           python build.py
 
-      # Debug: List files in the build directory
-      - name: List files in build directory
-        run: |
-          echo "Listing files in build directory:"
-          dir /s build
-
-      # Upload the built executables as artifacts
-      - name: Upload background build
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: discord_bot_background.exe
-          path: build\background\bot.exe
+          path: build/background/bot.exe
 
       - name: Upload console build
         uses: actions/upload-artifact@v4
         with:
           name: discord_bot.exe
-          path: build\console\bot.exe
+          path: build/console/bot.exe
