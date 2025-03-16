@@ -3,7 +3,7 @@ name: Build on Commit
 on:
   push:
     branches:
-      - master  # Trigger on every commit to the main branch
+      - main  # Trigger on every commit to the main branch
 
 jobs:
   build:
@@ -36,11 +36,11 @@ jobs:
       - name: Upload background build
         uses: actions/upload-artifact@v4
         with:
-          name: discord_bot_background
-          path: build/background/discord_bot_background.exe
+          name: discord_bot_background.exe  # Rename the artifact
+          path: build/background/bot.exe  # Original file name
 
       - name: Upload console build
         uses: actions/upload-artifact@v4
         with:
-          name: discord_bot
-          path: build/console/discord_bot.exe
+          name: discord_bot.exe  # Rename the artifact
+          path: build/console/bot.exe  # Original file name
