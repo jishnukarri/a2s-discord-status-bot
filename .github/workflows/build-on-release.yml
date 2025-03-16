@@ -20,6 +20,12 @@ jobs:
         with:
           python-version: '3.9'  # Use Python 3.9
 
+      # Generate version.txt
+      - name: Generate version.txt
+        run: |
+          echo "Version: ${{ github.sha }}" > version.txt
+          echo "Build Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> version.txt
+
       # Install dependencies
       - name: Install dependencies
         run: |
@@ -44,3 +50,10 @@ jobs:
         with:
           name: console-build
           path: build/console/
+
+      # Upload version.txt as an artifact
+      - name: Upload version.txt
+        uses: actions/upload-artifact@v4
+        with:
+          name: version
+          path: version.txt
