@@ -32,15 +32,21 @@ jobs:
         run: |
           python build.py
 
+      # Debug: List files in the build directory
+      - name: List files in build directory
+        run: |
+          echo "Listing files in build directory:"
+          ls -R build
+
       # Upload the built executables as artifacts
       - name: Upload background build
         uses: actions/upload-artifact@v4
         with:
-          name: discord_bot_background.exe  # Rename the artifact
-          path: build/background/bot.exe  # Relative path to the executable
+          name: discord_bot_background  # No .exe extension
+          path: build/background/bot  # No .exe extension
 
       - name: Upload console build
         uses: actions/upload-artifact@v4
         with:
-          name: discord_bot.exe  # Rename the artifact
-          path: build/console/bot.exe  # Relative path to the executable
+          name: discord_bot  # No .exe extension
+          path: build/console/bot  # No .exe extension
