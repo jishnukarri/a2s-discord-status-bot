@@ -1,8 +1,9 @@
-name: Build on Release
+name: Build on Commit
 
 on:
-  release:
-    types: [published]  # Trigger when a new release is published
+  push:
+    branches:
+      - main  # Trigger on every commit to the main branch
 
 jobs:
   build:
@@ -31,15 +32,15 @@ jobs:
         run: |
           python build.py
 
-      # Upload the built executables as release artifacts
+      # Upload the built executables as artifacts
       - name: Upload background build
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: background-build
           path: build/background/
 
       - name: Upload console build
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: console-build
           path: build/console/
