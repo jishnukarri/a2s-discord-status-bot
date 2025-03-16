@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # Use the latest Ubuntu runner
+    runs-on: windows-latest  # Use the latest Windows runner
 
     steps:
       # Check out the repository
@@ -36,17 +36,17 @@ jobs:
       - name: List files in build directory
         run: |
           echo "Listing files in build directory:"
-          ls -R build
+          dir /s build
 
       # Upload the built executables as artifacts
       - name: Upload background build
         uses: actions/upload-artifact@v4
         with:
-          name: discord_bot_background  # No .exe extension
-          path: build/background/bot  # No .exe extension
+          name: discord_bot_background.exe
+          path: build\background\bot.exe  # Windows path
 
       - name: Upload console build
         uses: actions/upload-artifact@v4
         with:
-          name: discord_bot  # No .exe extension
-          path: build/console/bot  # No .exe extension
+          name: discord_bot.exe
+          path: build\console\bot.exe  # Windows path
