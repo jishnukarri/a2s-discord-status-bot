@@ -1,0 +1,45 @@
+name: Build on Release
+
+on:
+  release:
+    types: [published]  # Trigger when a new release is published
+
+jobs:
+  build:
+    runs-on: ubuntu-latest  # Use the latest Ubuntu runner
+
+    steps:
+      # Check out the repository
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'  # Use Python 3.9
+
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # Run the build script
+      - name: Build executables
+        run: |
+          python build.py
+
+      # Upload the built executables as release artifacts
+      - name: Upload background build
+        uses: actions/upload-artifact@v3
+        with:
+          name: background-build
+          path: build/background/
+
+      - name: Upload console build
+        uses: actions/upload-artifact@v3
+        with:
+          name: console-build
+          path: build/console/
