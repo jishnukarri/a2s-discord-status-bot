@@ -43,10 +43,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: discord_bot_background.exe
-          path: build\background\bot.exe  # Windows path
+          path: build\background\bot.exe
 
       - name: Upload console build
         uses: actions/upload-artifact@v4
         with:
           name: discord_bot.exe
-          path: build\console\bot.exe  # Windows path
+          path: build\console\bot.exe
