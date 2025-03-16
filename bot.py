@@ -9,12 +9,7 @@ import sqlite3
 from discord.ext import commands
 from dotenv import load_dotenv
 from collections import defaultdict
-
-# Custom markdown text (you can modify this)
-CUSTOM_TITLE = "THIS BOT PING IS FROM THE UK 🇬🇧"
-CUSTOM_TEXT = """
-**DM Brenner650 or any Helpers to join our servers!  🎮**
-"""
+from tabulate import tabulate  # For creating tables
 
 # Configure logging (separate system)
 logging.basicConfig(
@@ -35,7 +30,9 @@ CONFIG = {
     'SERVERS': json.loads(os.getenv('SERVERS', '[]')),
     'QUERY_TIMEOUT': 5,
     'DATABASE_FILE': 'bot_data.db',
-    'MAX_RETRIES': 3
+    'MAX_RETRIES': 3,
+    'CUSTOM_TITLE': os.getenv('CUSTOM_TITLE', '🟢 Server Status'),
+    'CUSTOM_TEXT': os.getenv('CUSTOM_TEXT', '**DM Brenner650 or any Helpers to join our servers!  🎮**')
 }
 
 intents = discord.Intents.default()
@@ -207,18 +204,23 @@ class ServerMonitor:
         
         # Add custom markdown text
         embed.add_field(
-            name=CUSTOM_TITLE,
-            value=CUSTOM_TEXT,
+            name=CONFIG['CUSTOM_TITLE'],
+            value=CONFIG['CUSTOM_TEXT'],
             inline=False
         )
         
         # Add server status
         for idx, (address, (info, players, ping)) in enumerate(self.server_data.items()):
             if info:
-                player_list = "\n".join([f"• {p.name} - {p.score} kills" for p in players if p.name])
+                # Create a small table for players
+                player_table = tabulate(
+                    [[p.name, p.score] for p in players if p.name],
+                    headers=["Player", "Kills"],
+                    tablefmt="presto"
+                )
                 embed.add_field(
                     name=f"{self.keycap_emojis[idx]} {info.server_name} ({info.player_count}/{info.max_players}) | Ping: {ping}ms",
-                    value=f"Map: {info.map_name}\nPlayers:\n{player_list}",
+                    value=f"**Map:** {info.map_name}\n```\n{player_table}\n```",
                     inline=False
                 )
 
@@ -238,7 +240,7 @@ class ServerMonitor:
         for rank, (name, stats) in enumerate(leaderboard, 1):
             embed.add_field(
                 name=f"{self.get_rank_emoji(rank)} {name}",
-                value=f"Kills: {stats.kills} | Time: {stats.time_played} mins",
+                value=f"**Kills:** {stats.kills} | **Time Played:** {stats.time_played} mins",
                 inline=False
             )
 
