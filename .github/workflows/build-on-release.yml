@@ -37,10 +37,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: discord_bot_background.exe  # Rename the artifact
-          path: build/background/bot.exe  # Original file name
+          path: /home/runner/work/a2s-discord-status-bot/a2s-discord-status-bot/build/background/bot.exe  # Full path to the executable
 
       - name: Upload console build
         uses: actions/upload-artifact@v4
         with:
           name: discord_bot.exe  # Rename the artifact
-          path: build/console/bot.exe  # Original file name
+          path: /home/runner/work/a2s-discord-status-bot/a2s-discord-status-bot/build/console/bot.exe  # Full path to the executable
