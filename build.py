@@ -3,8 +3,8 @@ import PyInstaller.__main__
 
 # Configuration
 SCRIPT_NAME = "bot.py"  # Replace with your main script file
-ICON_PATH = "icon.ico"  # Replace with the path to your icon file (optional)
-VERSION_FILE = "version.txt"  # Path to the version file
+ICON_PATH = r"icon.ico"  # Replace with the path to your icon file (optional)
+VERSION_FILE = r"version.txt"  # Path to the version file
 
 # Output directories
 OUTPUT_DIR_BACKGROUND = "build/background"
