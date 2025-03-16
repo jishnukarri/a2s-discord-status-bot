@@ -22,6 +22,7 @@ PyInstaller.__main__.run([
     '--workpath', os.path.join(OUTPUT_DIR_BACKGROUND, 'temp'),
     '--specpath', OUTPUT_DIR_BACKGROUND,
     '--icon', ICON_PATH,  # Optional: Add an icon
+    '--name', 'bot',  # Name the output file (will have .exe extension on Windows)
     SCRIPT_NAME
 ])
 
@@ -33,6 +34,7 @@ PyInstaller.__main__.run([
     '--workpath', os.path.join(OUTPUT_DIR_CONSOLE, 'temp'),
     '--specpath', OUTPUT_DIR_CONSOLE,
     '--icon', ICON_PATH,  # Optional: Add an icon
+    '--name', 'bot',  # Name the output file (will have .exe extension on Windows)
     SCRIPT_NAME
 ])
 
