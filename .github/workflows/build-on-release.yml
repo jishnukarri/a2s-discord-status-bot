@@ -3,7 +3,7 @@ name: Build on Commit
 on:
   push:
     branches:
-      - main  # Trigger on every commit to the main branch
+      - master  # Trigger on every commit to the main branch
 
 jobs:
   build:
