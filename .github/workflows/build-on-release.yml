@@ -27,6 +27,14 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      # Create output directories and copy icon.ico
+      - name: Prepare build directories
+        run: |
+          mkdir build\background
+          mkdir build\console
+          copy icon.ico build\background\icon.ico
+          copy icon.ico build\console\icon.ico
+
       # Run the build script
       - name: Build executables
         run: |
