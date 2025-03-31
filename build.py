@@ -28,7 +28,6 @@ def build_executable():
         "pyinstaller",
         "--name", APP_NAME,
         "--onefile",
-        "--noupx",
         MAIN_SCRIPT
     ]
 
