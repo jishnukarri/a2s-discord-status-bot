@@ -4,14 +4,14 @@ import platform
 import subprocess
 import shutil
 
-# Configuration
+# Configuration for the build process
 APP_NAME = "ServerMonitorBot"
-MAIN_SCRIPT = "bot.py"  # Your main bot script
-BUILD_DIR = "build"    # Changed from "dist" to "build"
-ICON_PATH = r"icon.ico" # Optional: Add an icon file for Windows/macOS
+MAIN_SCRIPT = "bot.py"  # Main script to be built into an executable
+BUILD_DIR = "build"    # Directory for build output
+ICON_PATH = r"icon.ico" # Optional: Icon file for Windows/macOS
 
 def clean_build():
-    """Remove previous build artifacts"""
+    """Remove previous build artifacts to ensure a clean slate."""
     for folder in ["build", BUILD_DIR, f"{APP_NAME}.spec"]:
         if os.path.exists(folder):
             if os.path.isdir(folder):
@@ -20,47 +20,39 @@ def clean_build():
                 os.remove(folder)
 
 def build_executable():
-    """Build the executable for the current platform"""
+    """Build the executable for the current platform using PyInstaller."""
     system = platform.system().lower()
     clean_build()
 
     pyinstaller_cmd = [
         "pyinstaller",
         "--name", APP_NAME,
-        "--onefile",
+        "--onefile",  # Package as a single executable
         MAIN_SCRIPT
     ]
 
-    if system == "windows" and os.path.exists(ICON_PATH):
-        pyinstaller_cmd.extend(["--icon", ICON_PATH])
-    elif system == "darwin" and os.path.exists(ICON_PATH):
+    # Add icon for Windows or macOS if it exists
+    if system in ["windows", "darwin"] and os.path.exists(ICON_PATH):
         pyinstaller_cmd.extend(["--icon", ICON_PATH])
 
     try:
         subprocess.run(pyinstaller_cmd, check=True)
         print(f"Successfully built {APP_NAME} for {system}")
         
-        # Define platform-specific output directory
-        platform_dir_map = {
-            "windows": "windows",
-            "darwin": "macos",
-            "linux": "linux"
-        }
+        # Set up platform-specific output directory
+        platform_dir_map = {"windows": "windows", "darwin": "macos", "linux": "linux"}
         platform_dir = platform_dir_map.get(system, system)
         output_dir = os.path.join(BUILD_DIR, platform_dir)
         os.makedirs(output_dir, exist_ok=True)
 
-        # Move the executable
+        # Move executable to output directory
         src = os.path.join("dist", APP_NAME)
+        dest = os.path.join(output_dir, f"{APP_NAME}.exe" if system == "windows" else APP_NAME)
         if system == "windows":
             src += ".exe"
-            dest = os.path.join(output_dir, f"{APP_NAME}.exe")
-        else:
-            dest = os.path.join(output_dir, APP_NAME)
-        
         shutil.move(src, dest)
         
-        # Copy .env file if it exists
+        # Copy .env file if present
         if os.path.exists(".env"):
             shutil.copy(".env", output_dir)
             

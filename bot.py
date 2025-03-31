@@ -11,17 +11,14 @@ from dotenv import load_dotenv
 from collections import defaultdict
 from tabulate import tabulate
 
-# Logging configuration
+# Set up logging to file and console
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('bot_runtime.log'),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.FileHandler('bot_runtime.log'), logging.StreamHandler()]
 )
 
-# Load all configurable variables from .env
+# Load configuration from .env file with defaults
 load_dotenv()
 CONFIG = {
     'REFRESH_INTERVAL': int(os.getenv('REFRESH_INTERVAL', 10)),
@@ -42,12 +39,13 @@ CONFIG = {
     'KILL_UPDATE_INTERVAL': int(os.getenv('KILL_UPDATE_INTERVAL', 300))
 }
 
+# Configure Discord bot intents
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 def init_db():
-    """Initialize SQLite database with improved schema"""
+    """Set up SQLite database with tables for messages and leaderboards."""
     conn = sqlite3.connect(CONFIG['DATABASE_FILE'])
     cursor = conn.cursor()
     
@@ -132,7 +130,6 @@ class DataManager:
                 row[0]: PlayerStats(row[1], row[2]) 
                 for row in cursor.fetchall()
             }
-            
             return player_stats, monthly_stats
 
 class PlayerStats:
@@ -153,6 +150,7 @@ class ServerMonitor:
         self.keycap_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟']
 
     async def query_server(self, address):
+        """Query a game server with retry logic."""
         for attempt in range(CONFIG['MAX_RETRIES']):
             try:
                 info = await asyncio.wait_for(a2s.ainfo(address), timeout=CONFIG['QUERY_TIMEOUT'])
@@ -164,6 +162,7 @@ class ServerMonitor:
         return None, [], None
 
     async def update_all_servers(self):
+        """Update all servers in parallel and handle leaderboard reset."""
         tasks = [self.update_single_server(server['ip'], server['port']) for server in CONFIG['SERVERS']]
         await asyncio.gather(*tasks)
         self.check_monthly_reset()
@@ -177,14 +176,15 @@ class ServerMonitor:
             self.update_player_stats(players)
 
     def update_player_stats(self, players):
+        """Update player kill counts and time played, respecting kill update interval."""
         now = datetime.datetime.now()
         for player in players:
             if not player.name:
                 continue
-                
             stats = self.player_stats.get(player.name, PlayerStats())
             monthly_stats = self.monthly_leaderboard.get(player.name, PlayerStats())
             
+            # Update kills only if interval has passed
             if not stats.last_kill_update or (now - stats.last_kill_update).total_seconds() >= CONFIG['KILL_UPDATE_INTERVAL']:
                 if player.score > stats.current_session_kills:
                     new_kills = player.score - stats.current_session_kills
@@ -216,7 +216,6 @@ class ServerMonitor:
                     value=f"**Map:** {info.map_name}\n```\n{player_table}\n```",
                     inline=False
                 )
-
         embed.set_footer(text='\u200b', icon_url=CONFIG['FOOTER_ICON'])
         embed.timestamp = datetime.datetime.now()
         return embed
@@ -235,7 +234,6 @@ class ServerMonitor:
                 value=f"**Kills:** {stats.kills} | **Time Played:** {stats.time_played} mins",
                 inline=False
             )
-
         embed.set_footer(text='\u200b', icon_url=CONFIG['FOOTER_ICON'])
         embed.timestamp = datetime.datetime.now()
         return embed
@@ -245,6 +243,7 @@ class ServerMonitor:
         return emojis.get(rank, '🔹')
 
     def check_monthly_reset(self):
+        """Reset monthly leaderboard on the specified day if month has changed."""
         now = datetime.datetime.now()
         if now.day == CONFIG['MONTHLY_RESET_DAY'] and now.month != self.last_reset.month:
             self.monthly_leaderboard.clear()
@@ -255,6 +254,7 @@ monitor = ServerMonitor()
 
 @bot.event
 async def on_ready():
+    """Initialize bot by clearing old messages and starting update loop."""
     logging.info(f'Logged in as {bot.user}')
     channel = bot.get_channel(CONFIG['CHANNEL_ID'])
     
@@ -272,13 +272,12 @@ async def on_ready():
     bot.loop.create_task(status_update_loop())
 
 async def status_update_loop():
+    """Continuously update server data and Discord messages."""
     while True:
         try:
             await monitor.update_all_servers()
-            
             await monitor.leaderboard_message.edit(content="", embed=monitor.format_leaderboard())
             await monitor.status_message.edit(content="", embed=monitor.format_server_status())
-            
             await asyncio.sleep(CONFIG['REFRESH_INTERVAL'])
         except Exception as e:
             logging.error(f"Update error: {str(e)}")
