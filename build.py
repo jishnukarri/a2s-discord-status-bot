@@ -28,12 +28,9 @@ def build_executable():
         "pyinstaller",
         "--name", APP_NAME,
         "--onefile",
-        "--hidden-import", "a2s",       # Explicitly include a2s
-        "--hidden-import", "sqlite3",   # Include sqlite3
-        "--add-data", f".env{os.pathsep}.",  # Bundle .env file
-        "--add-data", f"icon.ico{os.pathsep}.",  # Bundle icon (if used)
         MAIN_SCRIPT
     ]
+
     if system == "windows" and os.path.exists(ICON_PATH):
         pyinstaller_cmd.extend(["--icon", ICON_PATH])
     elif system == "darwin" and os.path.exists(ICON_PATH):

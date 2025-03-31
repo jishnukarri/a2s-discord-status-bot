@@ -6,39 +6,30 @@ import os
 import json
 import logging
 import sqlite3
-import sys
 from discord.ext import commands
 from dotenv import load_dotenv
 from collections import defaultdict
 from tabulate import tabulate
-
-# Determine if running as compiled EXE
-if getattr(sys, 'frozen', False):
-    base_dir = sys._MEIPASS
-else:
-    base_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(os.path.join(base_dir, 'bot_runtime.log')),
+        logging.FileHandler('bot_runtime.log'),
         logging.StreamHandler()
     ]
 )
 
-# Load environment variables from EXE directory or script location
-env_path = os.path.join(base_dir, '.env')
-load_dotenv(env_path)
-
+# Load all configurable variables from .env
+load_dotenv()
 CONFIG = {
     'REFRESH_INTERVAL': int(os.getenv('REFRESH_INTERVAL', 10)),
     'API_KEY': os.getenv('API_KEY'),
     'CHANNEL_ID': int(os.getenv('CHANNEL_ID')),
     'SERVERS': json.loads(os.getenv('SERVERS', '[]')),
     'QUERY_TIMEOUT': int(os.getenv('QUERY_TIMEOUT', 5)),
-    'DATABASE_FILE': os.path.join(base_dir, os.getenv('DATABASE_FILE', 'bot_data.db')),
+    'DATABASE_FILE': os.getenv('DATABASE_FILE', 'bot_data.db'),
     'MAX_RETRIES': int(os.getenv('MAX_RETRIES', 3)),
     'CUSTOM_TITLE': os.getenv('CUSTOM_TITLE', '🟢 Server Status'),
     'CUSTOM_TEXT': os.getenv('CUSTOM_TEXT', '**DM an admin to join our servers!**'),
@@ -56,43 +47,38 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 def init_db():
-    """Initialize SQLite database with improved error handling"""
-    try:
-        conn = sqlite3.connect(CONFIG['DATABASE_FILE'])
-        cursor = conn.cursor()
-        
-        cursor.execute('''CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY,
-            message_id TEXT,
-            channel_id TEXT,
-            type TEXT
-        )''')
-        
-        cursor.execute('''CREATE TABLE IF NOT EXISTS leaderboard (
-            player_name TEXT PRIMARY KEY,
-            kills INTEGER,
-            time_played INTEGER,
-            last_seen TEXT,
-            last_kill_update TEXT,
-            current_session_kills INTEGER
-        )''')
-        
-        cursor.execute('''CREATE TABLE IF NOT EXISTS monthly_leaderboard (
-            player_name TEXT PRIMARY KEY,
-            kills INTEGER,
-            time_played INTEGER,
-            month TEXT
-        )''')
-        
-        conn.commit()
-        logging.info(f"Database initialized at {CONFIG['DATABASE_FILE']}")
-    except Exception as e:
-        logging.error(f"Database initialization failed: {str(e)}")
-    finally:
-        if conn:
-            conn.close()
+    """Initialize SQLite database with improved schema"""
+    conn = sqlite3.connect(CONFIG['DATABASE_FILE'])
+    cursor = conn.cursor()
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY,
+        message_id TEXT,
+        channel_id TEXT,
+        type TEXT
+    )''')
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS leaderboard (
+        player_name TEXT PRIMARY KEY,
+        kills INTEGER,
+        time_played INTEGER,
+        last_seen TEXT,
+        last_kill_update TEXT,
+        current_session_kills INTEGER
+    )''')
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS monthly_leaderboard (
+        player_name TEXT PRIMARY KEY,
+        kills INTEGER,
+        time_played INTEGER,
+        month TEXT
+    )''')
+    
+    conn.commit()
+    conn.close()
 
 init_db()
+
 class DataManager:
     @staticmethod
     def save_message(message_id, channel_id, message_type):
@@ -270,38 +256,36 @@ monitor = ServerMonitor()
 @bot.event
 async def on_ready():
     logging.info(f'Logged in as {bot.user}')
-    try:
-        channel = bot.get_channel(CONFIG['CHANNEL_ID'])
-        async for message in channel.history(limit=100):
-            if message.author == bot.user:
-                await message.delete()
-                logging.info(f"Deleted old bot message: {message.id}")
-
-        monitor.leaderboard_message = await channel.send("Updating leaderboard...")
-        DataManager.save_message(monitor.leaderboard_message.id, CONFIG['CHANNEL_ID'], 'leaderboard')
-        
-        monitor.status_message = await channel.send("Updating server status...")
-        DataManager.save_message(monitor.status_message.id, CONFIG['CHANNEL_ID'], 'status')
-        
-        bot.loop.create_task(status_update_loop())
-    except Exception as e:
-        logging.error(f"Startup failed: {str(e)}")
+    channel = bot.get_channel(CONFIG['CHANNEL_ID'])
+    
+    async for message in channel.history(limit=100):
+        if message.author == bot.user:
+            await message.delete()
+            logging.info(f"Deleted old bot message: {message.id}")
+    
+    monitor.leaderboard_message = await channel.send("Updating leaderboard...")
+    DataManager.save_message(monitor.leaderboard_message.id, CONFIG['CHANNEL_ID'], 'leaderboard')
+    
+    monitor.status_message = await channel.send("Updating server status...")
+    DataManager.save_message(monitor.status_message.id, CONFIG['CHANNEL_ID'], 'status')
+    
+    bot.loop.create_task(status_update_loop())
 
 async def status_update_loop():
     while True:
         try:
             await monitor.update_all_servers()
+            
             await monitor.leaderboard_message.edit(content="", embed=monitor.format_leaderboard())
             await monitor.status_message.edit(content="", embed=monitor.format_server_status())
+            
             await asyncio.sleep(CONFIG['REFRESH_INTERVAL'])
         except Exception as e:
-            logging.error(f"Update loop error: {str(e)}")
+            logging.error(f"Update error: {str(e)}")
             await asyncio.sleep(CONFIG['REFRESH_INTERVAL'])
 
 if __name__ == "__main__":
     try:
         bot.run(CONFIG['API_KEY'])
-    except discord.LoginError:
-        logging.critical("Invalid Discord token in .env file!")
     except Exception as e:
-        logging.critical(f"Fatal error: {str(e)}")
+        logging.error(f"Critical error: {str(e)}")
