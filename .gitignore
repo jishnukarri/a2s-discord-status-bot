@@ -5,7 +5,7 @@ build
 .env
 
 # Ignore database files
-bot_data.db
+*.db
 
 # Ignore Python cache
 __pycache__/

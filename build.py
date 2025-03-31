@@ -1,37 +1,73 @@
 import os
-import PyInstaller.__main__
+import sys
+import platform
+import subprocess
+import shutil
 
 # Configuration
-SCRIPT_NAME = "bot.py"  # Your main script
-ICON_PATH = os.path.abspath("icon.ico")  # Absolute path to root icon
+APP_NAME = "ServerMonitorBot"
+MAIN_SCRIPT = "bot.py"  # Your main bot script
+BUILD_DIR = "build"    # Changed from "dist" to "build"
+ICON_PATH = r"icon.ico" # Optional: Add an icon file for Windows/macOS
 
-# Output directories
-OUTPUT_DIR_BACKGROUND = os.path.abspath("build/background")
-OUTPUT_DIR_CONSOLE = os.path.abspath("build/console")
+def clean_build():
+    """Remove previous build artifacts"""
+    for folder in ["build", BUILD_DIR, f"{APP_NAME}.spec"]:
+        if os.path.exists(folder):
+            if os.path.isdir(folder):
+                shutil.rmtree(folder)
+            else:
+                os.remove(folder)
 
-# Create output directories
-os.makedirs(OUTPUT_DIR_BACKGROUND, exist_ok=True)
-os.makedirs(OUTPUT_DIR_CONSOLE, exist_ok=True)
+def build_executable():
+    """Build the executable for the current platform"""
+    system = platform.system().lower()
+    clean_build()
 
-# Build background version (no console)
-print("Building background version...")
-PyInstaller.__main__.run([
-    '--onefile',
-    '--noconsole',
-    '--distpath', OUTPUT_DIR_BACKGROUND,
-    '--workpath', os.path.join(OUTPUT_DIR_BACKGROUND, 'temp'),
-    '--icon', ICON_PATH,  # Use root icon directly
-    SCRIPT_NAME
-])
+    pyinstaller_cmd = [
+        "pyinstaller",
+        "--name", APP_NAME,
+        "--onefile",
+        "--noupx",
+        MAIN_SCRIPT
+    ]
 
-# Build console version
-print("Building console version...")
-PyInstaller.__main__.run([
-    '--onefile',
-    '--distpath', OUTPUT_DIR_CONSOLE,
-    '--workpath', os.path.join(OUTPUT_DIR_CONSOLE, 'temp'),
-    '--icon', ICON_PATH,  # Use root icon directly
-    SCRIPT_NAME
-])
+    if system == "windows" and os.path.exists(ICON_PATH):
+        pyinstaller_cmd.extend(["--icon", ICON_PATH])
+    elif system == "darwin" and os.path.exists(ICON_PATH):
+        pyinstaller_cmd.extend(["--icon", ICON_PATH])
 
-print("Build completed!")
+    try:
+        subprocess.run(pyinstaller_cmd, check=True)
+        print(f"Successfully built {APP_NAME} for {system}")
+        
+        # Define platform-specific output directory
+        platform_dir_map = {
+            "windows": "windows",
+            "darwin": "macos",
+            "linux": "linux"
+        }
+        platform_dir = platform_dir_map.get(system, system)
+        output_dir = os.path.join(BUILD_DIR, platform_dir)
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Move the executable
+        src = os.path.join("dist", APP_NAME)
+        if system == "windows":
+            src += ".exe"
+            dest = os.path.join(output_dir, f"{APP_NAME}.exe")
+        else:
+            dest = os.path.join(output_dir, APP_NAME)
+        
+        shutil.move(src, dest)
+        
+        # Copy .env file if it exists
+        if os.path.exists(".env"):
+            shutil.copy(".env", output_dir)
+            
+    except subprocess.CalledProcessError as e:
+        print(f"Build failed: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    build_executable()
