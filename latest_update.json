@@ -1,7 +1,7 @@
 {
-    "tag_name": "v1.4.2",
-    "name": "Server Monitor Bot v1.4.2",
-    "body": "# Server Monitor Bot v1.4.2\n\n**Key Changes:**\n- 🔄 Migrated from SQLite to JSON database\n- 📦 Added self-updating mechanism with checksum verification\n- 📊 Implemented weekly activity graphs (`/weeklygraph` command)\n- 🛠️ New GUI-based database migration tool\n- 🔄 Automatic message cleanup on startup\n\n**Fixes:**\n- Resolved pytest deprecation warnings\n- Fixed player stats persistence\n- Improved error handling\n\n**Requirements:**\n- Python 3.9+\n- Dependencies from `requirements.txt`\n\nUse `python build.py` to create platform-specific executables.",
+    "tag_name": "v1.4.3",
+    "name": "Server Monitor Bot v1.4.3",
+    "body": "# Server Monitor Bot v1.4.3\n\n**Key Changes:**\n- 🔄 Migrated from SQLite to JSON database\n- 📦 Added self-updating mechanism with checksum verification\n- 📊 Implemented weekly activity graphs (`/weeklygraph` command)\n- 🛠️ New GUI-based database migration tool\n- 🔄 Automatic message cleanup on startup\n\n**Fixes:**\n- Resolved pytest deprecation warnings\n- Fixed player stats persistence\n- Improved error handling\n\n**Requirements:**\n- Python 3.9+\n- Dependencies from `requirements.txt`\n\nUse `python build.py` to create platform-specific executables.",
     "target_commitish": "stable",
     "assets": [
       {
