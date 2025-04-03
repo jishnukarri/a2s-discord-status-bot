@@ -1,0 +1,111 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - stable  # Trigger only on updates to the stable branch
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            folder: linux
+            ext: ''
+          - os: windows-latest
+            folder: win
+            ext: '.exe'
+          - os: macos-latest
+            folder: macos
+            ext: ''
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build executable
+      run: python build.py
+
+    - name: Generate checksum
+      run: |
+        mkdir -p build/${{ matrix.folder }}
+        sha256sum dist/* > build/${{ matrix.folder }}/checksum.sha256
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.folder }}-build
+        path: build/${{ matrix.folder }}/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: build
+
+    - name: Update latest_update.json
+      run: |
+        RELEASE_NOTES=$(cat release_notes.md)
+        cat <<EOF > latest_update.json
+        {
+          "tag_name": "v\${{ github.run_number }}",
+          "name": "Server Monitor Bot v\${{ github.run_number }}",
+          "body": "\${RELEASE_NOTES}",
+          "target_commitish": "stable",
+          "assets": [
+            {
+              "name": "win/ServerMonitorBot.exe",
+              "path": "build/win/ServerMonitorBot.exe",
+              "checksum": "build/win/checksum.sha256"
+            },
+            {
+              "name": "linux/ServerMonitorBot",
+              "path": "build/linux/ServerMonitorBot",
+              "checksum": "build/linux/checksum.sha256"
+            },
+            {
+              "name": "macos/ServerMonitorBot",
+              "path": "build/macos/ServerMonitorBot",
+              "checksum": "build/macos/checksum.sha256"
+            }
+          ]
+        }
+        EOF
+
+    - name: Create GitHub Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}
+        release_name: Server Monitor Bot v${{ github.run_number }}
+        draft: false
+        prerelease: false
+        body_path: latest_update.json
+
+    - name: Upload release assets
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: build/${{ matrix.folder }}/ServerMonitorBot${{ matrix.ext }}
+        asset_name: ServerMonitorBot-${{ matrix.folder }}${{ matrix.ext }}
+        asset_content_type: application/octet-stream

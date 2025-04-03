@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Self-Updating Bot Implementation Guide</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #3498db;
+            --text: #333;
+            --code-bg: #f5f5f5;
+            --note-bg: #fff3cd;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            color: var(--text);
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        h1, h2, h3 {
+            color: var(--primary);
+        }
+
+        h1 {
+            border-bottom: 3px solid var(--secondary);
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            margin-top: 2em;
+            padding-left: 10px;
+            border-left: 4px solid var(--secondary);
+        }
+
+        pre {
+            background: var(--code-bg);
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+
+        code {
+            font-family: 'Consolas', monospace;
+            background: var(--code-bg);
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+
+        .note {
+            background: var(--note-bg);
+            padding: 15px;
+            border-left: 4px solid #ffc107;
+            margin: 20px 0;
+        }
+
+        .warning {
+            color: #dc3545;
+            font-weight: bold;
+        }
+
+        a {
+            color: var(--secondary);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Self-Updating Bot Implementation Guide</h1>
+        
+        <div class="note">
+            <strong>Last Updated:</strong> 2024-03-20<br>
+            <strong>Requirements:</strong> Python 3.9+, GitHub repository
+        </div>
+
+        <h2>Table of Contents</h2>
+        <ol>
+            <li><a href="#repo-structure">Repository Structure</a></li>
+            <li><a href="#github-actions">GitHub Actions Setup</a></li>
+            <li><a href="#bot-modifications">Bot Code Modifications</a></li>
+            <li><a href="#final-steps">Final Implementation Steps</a></li>
+            <li><a href="#troubleshooting">Troubleshooting</a></li>
+        </ol>
+
+        <h2 id="repo-structure">1. Repository Structure Setup</h2>
+        <pre>
+your-repo/
+├── build/
+│   ├── win/
+│   │   ├── ServerMonitorBot.exe
+│   │   └── checksum.sha256
+│   ├── linux/
+│   │   ├── ServerMonitorBot
+│   │   └── checksum.sha256
+│   └── macos/
+│       ├── ServerMonitorBot
+│       └── checksum.sha256
+├── .github/
+│   └── workflows/
+│       └── build.yml
+└── bot.py</pre>
+
+        <h2 id="github-actions">2. GitHub Actions Configuration</h2>
+        <p>Create/update <code>.github/workflows/build.yml</code>:</p>
+        <pre><code>
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            folder: linux
+            ext: ''
+          - os: windows-latest
+            folder: win
+            ext: '.exe'
+          - os: macos-latest
+            folder: macos
+            ext: ''
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Build executable
+      run: python build.py
+    
+    - name: Generate Checksum
+      run: |
+        mkdir -p build/${{ matrix.folder }}
+        sha256sum dist/* > build/${{ matrix.folder }}/checksum.sha256
+    
+    - name: Commit Build Files
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add build/
+        git commit -m "Add ${{ matrix.folder }} build" || echo "No changes"
+        git push</code></pre>
+
+        <h2 id="bot-modifications">3. Bot Code Modifications</h2>
+        <h3>A. Configuration Additions</h3>
+        <pre><code>
+# In bot.py's CONFIG dictionary
+'VERSION': '1.0.0',
+'UPDATE_CHECK_INTERVAL': 3600,  # 1 hour
+'GITHUB_REPO': 'yourusername/repo',
+'GITHUB_BRANCH': 'main'</code></pre>
+
+        <h3>B. Updater Class Implementation</h3>
+        <pre><code>
+import hashlib
+import aiohttp
+import platform
+
+class Updater:
+    def __init__(self):
+        self.update_available = False
+        self.download_url = None
+        self.checksum = None
+
+    async def check_update(self):
+        # Implementation here
+        pass
+
+    async def _prepare_update(self):
+        # OS detection logic
+        pass
+
+    async def download_update(self):
+        # File download and verification
+        pass
+
+    def _create_restart_script(self):
+        # Platform-specific script creation
+        pass</code></pre>
+
+        <h2 id="final-steps">4. Final Implementation Steps</h2>
+        <ol>
+            <li>Add required dependencies to <code>requirements.txt</code>
+                <pre><code>aiohttp==3.9.5</code></pre>
+            </li>
+            <li>Configure repository permissions
+                <div class="note">
+                    <strong>Note:</strong> Enable write permissions in<br>
+                    <em>Settings > Actions > General > Workflow permissions</em>
+                </div>
+            </li>
+            <li>Implement version management
+                <div class="warning">⚠️ Remember to increment version number for each release</div>
+            </li>
+        </ol>
+
+        <h2 id="troubleshooting">5. Troubleshooting Checklist</h2>
+        <ul>
+            <li>✅ Verify checksum matches between build files and .sha256 files</li>
+            <li>✅ Test update process on all target OS platforms</li>
+            <li>✅ Monitor bot_runtime.log for errors</li>
+            <li>✅ Confirm GitHub Actions has proper commit permissions</li>
+            <li>✅ Ensure version numbers follow semantic versioning</li>
+        </ul>
+
+        <div class="note" style="margin-top: 40px;">
+            <strong>Pro Tip:</strong> Bookmark this page and keep a copy in your project's docs folder for reference.
+        </div>
+    </div>
+</body>
+</html>

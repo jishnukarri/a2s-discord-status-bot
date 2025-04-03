@@ -1,0 +1,14 @@
+config.json
+build
+
+# Ignore environment variables
+.env
+
+# Ignore database files
+*.db
+
+# Ignore Python cache
+__pycache__/
+
+# Ignore log files
+*.log
