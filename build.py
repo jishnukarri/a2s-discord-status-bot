@@ -59,10 +59,7 @@ exe = EXE(
     upx=True,
     console=True,
     disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None
+    argv_emulation=False
 )
 coll = COLLECT(
     exe,
@@ -71,7 +68,6 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    upx_exclude=[],
     name='{APP_NAME}'
 )
 """
@@ -88,7 +84,7 @@ coll = COLLECT(
         "--workpath", os.path.join(BUILD_DIR, "temp"),
         "--clean",
         "--noconfirm",
-        "--onefile"  # This is critical for macOS builds
+        "--onefile"
     ]
 
     if ICON_PATH and os.path.exists(ICON_PATH):
@@ -104,35 +100,36 @@ coll = COLLECT(
         output_dir = os.path.join(BUILD_DIR, platform_info['plat'])
         os.makedirs(output_dir, exist_ok=True)
         
-        # macOS creates a nested directory for the executable
+        # Handle macOS special cases
         if platform_info['plat'] == "macos":
-            source_path = os.path.join(DIST_DIR, executable_name)
-            target_path = os.path.join(output_dir, executable_name)
-            
-            # Handle macOS app bundle if present
+            # Find the actual executable inside .app bundle if created
             app_bundle = os.path.join(DIST_DIR, f"{APP_NAME}.app")
+            source_path = os.path.join(DIST_DIR, executable_name)
+            
             if os.path.exists(app_bundle):
                 print("Found macOS app bundle, moving it...")
-                shutil.move(app_bundle, os.path.join(output_dir, f"{APP_NAME}.app"))
-                target_path = os.path.join(output_dir, f"{APP_NAME}.app", "Contents", "MacOS", APP_NAME)
-                source_path = target_path  # For checksum calculation
+                target_path = os.path.join(output_dir, f"{APP_NAME}.app")
+                shutil.move(app_bundle, target_path)
+                
+                # Point source_path to the actual binary inside the bundle
+                source_path = os.path.join(target_path, "Contents", "MacOS", APP_NAME)
             else:
+                target_path = os.path.join(output_dir, executable_name)
                 shutil.move(source_path, target_path)
         else:
-            shutil.move(os.path.join(DIST_DIR, executable_name), 
-                       os.path.join(output_dir, executable_name))
-        
+            target_path = os.path.join(output_dir, executable_name)
+            shutil.move(os.path.join(DIST_DIR, executable_name), target_path)
+
         # Copy data files
         for data_dir in DATA_DIRS:
             if os.path.exists(data_dir):
-                shutil.copytree(data_dir, os.path.join(output_dir, data_dir), 
-                              dirs_exist_ok=True)
+                shutil.copytree(data_dir, os.path.join(output_dir, data_dir), dirs_exist_ok=True)
         
         # Copy config file
         if os.path.exists(ENV_TEMPLATE):
             shutil.copy(ENV_TEMPLATE, os.path.join(output_dir, ".env"))
         
-        # Generate checksum
+        # Generate checksum (using source_path which points to the actual binary)
         if os.path.exists(source_path):
             with open(os.path.join(output_dir, "checksum.sha256"), "w") as f:
                 with open(source_path, 'rb') as f2:

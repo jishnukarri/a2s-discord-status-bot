@@ -1,6 +1,5 @@
 name: Build & Release
 
-# Trigger on all branches and manual dispatch
 on:
   push:
     branches: ["*"]  # All branches
@@ -18,21 +17,24 @@ jobs:
           - os: ubuntu-latest
             folder: linux
             ext: ''
+            checksum_cmd: 'sha256sum'
           - os: windows-latest
             folder: win
             ext: '.exe'
+            checksum_cmd: 'CertUtil -hashfile'
           - os: macos-latest
             folder: macos
             ext: ''
+            checksum_cmd: 'shasum -a 256'
 
     steps:
-    - name: Checkout code (latest branch)
-      uses: actions/checkout@main  # Using latest branch
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-    - name: Set up Python (latest)
-      uses: actions/setup-python@main  # Using latest branch
+    - name: Set up Python
+      uses: actions/setup-python@v4
       with:
-        python-version: '3.x'  # Dynamically use latest Python 3.x
+        python-version: '3.9'
 
     - name: Install dependencies
       run: |
@@ -47,43 +49,43 @@ jobs:
       run: |
         mkdir -p build/${{ matrix.folder }}
         cd build/${{ matrix.folder }}
-        find . -type f -not -name "*.sha256" -exec sha256sum {} + > checksum.sha256
+        
+        # Platform-specific checksum command
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+          # macOS: Exclude .app bundles from checksum
+          find . -type f -not -name "*.sha256" -not -name "*.app" | xargs ${{ matrix.checksum_cmd }} > checksum.sha256
+        elif [[ "$OSTYPE" == "msys"* ]]; then
+          # Windows: Use CertUtil for checksum
+          for file in $(find . -type f -not -name "*.sha256" -not -name "*.app"); do
+            ${{ matrix.checksum_cmd }} "$file" SHA256 | grep -v "CertUtil" | tr -d ' ' >> checksum.sha256
+          done
+        else
+          # Linux: Standard SHA256
+          ${{ matrix.checksum_cmd }} $(find . -type f -not -name "*.sha256") > checksum.sha256
+        fi
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@main  # Using latest branch
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.folder }}-build-${{ github.ref_name }}
         path: |
           build/${{ matrix.folder }}/**
         retention-days: 7
 
-  test:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-    - name: Download artifacts
-      uses: actions/download-artifact@main  # Using latest branch
-      with:
-        path: build
-
-    - name: Run unit tests (example)
-      run: |
-        python -m pytest tests/
-
   release:
     runs-on: ubuntu-latest
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'  # Only on main branch
-
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
     steps:
     - name: Download artifacts
-      uses: actions/download-artifact@main
+      uses: actions/download-artifact@v4
       with:
         path: build
 
     - name: Create release
       id: create_release
-      uses: actions/create-release@main  # Using latest branch
+      uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -91,7 +93,7 @@ jobs:
         release_name: Release v${{ github.run_number }}
 
     - name: Upload Linux asset
-      uses: actions/upload-release-asset@main  # Using latest branch
+      uses: actions/upload-release-asset@v1
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: build/linux/ServerMonitorBot
@@ -99,7 +101,7 @@ jobs:
         asset_content_type: application/octet-stream
 
     - name: Upload Windows asset
-      uses: actions/upload-release-asset@main
+      uses: actions/upload-release-asset@v1
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: build/win/ServerMonitorBot.exe
@@ -107,7 +109,7 @@ jobs:
         asset_content_type: application/octet-stream
 
     - name: Upload macOS asset
-      uses: actions/upload-release-asset@main
+      uses: actions/upload-release-asset@v1
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: build/macos/ServerMonitorBot
