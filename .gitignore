@@ -1,14 +1,30 @@
-config.json
-build
-
-# Ignore environment variables
-.env
-
-# Ignore database files
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
 *.db
+*.sqlite3
 
-# Ignore Python cache
-__pycache__/
+# Virtual environments
+venv/
+env/
+.virtualenv/
 
-# Ignore log files
+# Build artifacts
+/build/
+/dist/
+*.spec
+
+# Environment variables
+.env
+.env.local
+
+# Logs
 *.log
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
