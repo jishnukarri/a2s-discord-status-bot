@@ -1,31 +1,19 @@
-name: Build & Release
+name: Windows Build Only
 
 on:
   push:
     branches: ["*"]  # All branches
-  pull_request:
-    branches: ["*"]  # Optional: Add PR support
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest]
         include:
-          - os: ubuntu-latest
-            folder: linux
-            ext: ''
-            checksum_cmd: 'sha256sum'
-          - os: windows-latest
-            folder: win
+          - folder: win
             ext: '.exe'
-            checksum_cmd: 'CertUtil -hashfile'
-          - os: macos-latest
-            folder: macos
-            ext: ''
-            checksum_cmd: 'shasum -a 256'
 
     steps:
     - name: Checkout code
@@ -45,73 +33,10 @@ jobs:
       run: |
         python build.py
 
-    - name: Generate checksum
-      run: |
-        mkdir -p build/${{ matrix.folder }}
-        cd build/${{ matrix.folder }}
-        
-        # Platform-specific checksum command
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-          # macOS: Exclude .app bundles from checksum
-          find . -type f -not -name "*.sha256" -not -name "*.app" | xargs ${{ matrix.checksum_cmd }} > checksum.sha256
-        elif [[ "$OSTYPE" == "msys"* ]]; then
-          # Windows: Use CertUtil for checksum
-          for file in $(find . -type f -not -name "*.sha256" -not -name "*.app"); do
-            ${{ matrix.checksum_cmd }} "$file" SHA256 | grep -v "CertUtil" | tr -d ' ' >> checksum.sha256
-          done
-        else
-          # Linux: Standard SHA256
-          ${{ matrix.checksum_cmd }} $(find . -type f -not -name "*.sha256") > checksum.sha256
-        fi
-
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.folder }}-build-${{ github.ref_name }}
+        name: windows-build-${{ github.ref_name }}
         path: |
-          build/${{ matrix.folder }}/**
+          build/win/**
         retention-days: 7
-
-  release:
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Download artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: build
-
-    - name: Create release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: v${{ github.run_number }}
-        release_name: Release v${{ github.run_number }}
-
-    - name: Upload Linux asset
-      uses: actions/upload-release-asset@v1
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: build/linux/ServerMonitorBot
-        asset_name: ServerMonitorBot-linux
-        asset_content_type: application/octet-stream
-
-    - name: Upload Windows asset
-      uses: actions/upload-release-asset@v1
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: build/win/ServerMonitorBot.exe
-        asset_name: ServerMonitorBot-windows.exe
-        asset_content_type: application/octet-stream
-
-    - name: Upload macOS asset
-      uses: actions/upload-release-asset@v1
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: build/macos/ServerMonitorBot
-        asset_name: ServerMonitorBot-macos
-        asset_content_type: application/octet-stream

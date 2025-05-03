@@ -3,7 +3,6 @@ import sys
 import platform
 import subprocess
 import shutil
-import hashlib
 
 # Configuration (Version now hardcoded in bot.py)
 APP_NAME = "ServerMonitorBot"
@@ -21,6 +20,15 @@ def clean_build_dirs():
         if os.path.exists(dir_path):
             shutil.rmtree(dir_path)
 
+def get_platform_info():
+    """Get platform-specific settings"""
+    return {
+        "name": "windows",
+        "icon_format": ".ico",
+        "folder": "win",
+        "ext": ".exe"
+    }
+
 def build_executable():
     """Build the executable using PyInstaller"""
     print("Starting build process...")
@@ -30,7 +38,7 @@ def build_executable():
     
     # Create spec file content
     spec_content = f"""# -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.building.build_main import Analysis, PYZ, EXE, COLLECT
+from PyInstaller.building.build_main import Analysis, PYZ, EXE
 
 block_cipher = None
 
@@ -57,25 +65,15 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,
-    disable_windowed_traceback=False,
-    argv_emulation=False
+    console=True
 )
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
-    name='{APP_NAME}'
-)
+coll = a.collect(exe, name='{APP_NAME}')
 """
 
     with open(f"{APP_NAME}.spec", "w") as f:
         f.write(spec_content)
 
-    # Build command (now using --onefile)
+    # Build command
     build_cmd = [
         "pyinstaller",
         "--name", APP_NAME,
@@ -87,38 +85,24 @@ coll = COLLECT(
         "--onefile"
     ]
 
-    if ICON_PATH and os.path.exists(ICON_PATH):
+    # Handle icon only for Windows
+    if os.path.exists(ICON_PATH) and platform.system() == "Windows":
         build_cmd.extend(["--icon", ICON_PATH])
-    
+
     build_cmd.append(MAIN_SCRIPT)
 
     try:
         print("Running PyInstaller...")
         subprocess.run(build_cmd, check=True)
         
-        # Create platform-specific distribution folder
-        output_dir = os.path.join(BUILD_DIR, platform_info['plat'])
+        # Create output folder
+        output_dir = os.path.join(BUILD_DIR, platform_info['folder'])
         os.makedirs(output_dir, exist_ok=True)
         
-        # Handle macOS special cases
-        if platform_info['plat'] == "macos":
-            # Find the actual executable inside .app bundle if created
-            app_bundle = os.path.join(DIST_DIR, f"{APP_NAME}.app")
-            source_path = os.path.join(DIST_DIR, executable_name)
-            
-            if os.path.exists(app_bundle):
-                print("Found macOS app bundle, moving it...")
-                target_path = os.path.join(output_dir, f"{APP_NAME}.app")
-                shutil.move(app_bundle, target_path)
-                
-                # Point source_path to the actual binary inside the bundle
-                source_path = os.path.join(target_path, "Contents", "MacOS", APP_NAME)
-            else:
-                target_path = os.path.join(output_dir, executable_name)
-                shutil.move(source_path, target_path)
-        else:
-            target_path = os.path.join(output_dir, executable_name)
-            shutil.move(os.path.join(DIST_DIR, executable_name), target_path)
+        # Move executable
+        source_path = os.path.join(DIST_DIR, executable_name)
+        target_path = os.path.join(output_dir, executable_name)
+        shutil.move(source_path, target_path)
 
         # Copy data files
         for data_dir in DATA_DIRS:
@@ -128,14 +112,6 @@ coll = COLLECT(
         # Copy config file
         if os.path.exists(ENV_TEMPLATE):
             shutil.copy(ENV_TEMPLATE, os.path.join(output_dir, ".env"))
-        
-        # Generate checksum (using source_path which points to the actual binary)
-        if os.path.exists(source_path):
-            with open(os.path.join(output_dir, "checksum.sha256"), "w") as f:
-                with open(source_path, 'rb') as f2:
-                    content = f2.read()
-                hash_str = hashlib.sha256(content).hexdigest()
-                f.write(f"{hash_str}  {executable_name}")
         
         print(f"Build successful! Output in: {output_dir}")
         return True
@@ -148,16 +124,6 @@ coll = COLLECT(
         for f in [f"{APP_NAME}.spec"]:
             if os.path.exists(f):
                 os.remove(f)
-
-def get_platform_info():
-    """Get platform-specific settings"""
-    system = platform.system().lower()
-    platforms = {
-        "windows": {"ext": ".exe", "plat": "win"},
-        "darwin": {"ext": "", "plat": "macos"},
-        "linux": {"ext": "", "plat": "linux"}
-    }
-    return platforms.get(system, {"ext": "", "plat": "unknown"})
 
 if __name__ == "__main__":
     clean_build_dirs()
