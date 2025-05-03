@@ -3,9 +3,9 @@ import sys
 import platform
 import subprocess
 import shutil
-from argparse import ArgumentParser
+import hashlib
 
-# Configuration (Version now hardcoded)
+# Configuration (Version now hardcoded in bot.py)
 APP_NAME = "ServerMonitorBot"
 MAIN_SCRIPT = "bot.py"
 BUILD_DIR = "build"
@@ -13,11 +13,6 @@ DIST_DIR = "dist"
 ICON_PATH = "icon.ico"
 DATA_DIRS = ["database"]
 ENV_TEMPLATE = ".env.example"
-
-def parse_args():
-    """No longer requires version argument"""
-    parser = ArgumentParser(description="Build the bot executable")
-    return parser.parse_args()
 
 def clean_build_dirs():
     """Clean previous build artifacts"""
@@ -33,44 +28,58 @@ def build_executable():
     platform_info = get_platform_info()
     executable_name = f"{APP_NAME}{platform_info['ext']}"
     
-    # Generate datas string in the format ('dir','dir')
-    datas = []
-    for d in DATA_DIRS:
-        datas.append(f"('{d}', '{d}')")
-    
     # Create spec file content
     spec_content = f"""# -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.building.build_main import Analysis, PYZ, EXE, COLLECT
+
 block_cipher = None
 
-a = Analysis(['{MAIN_SCRIPT}'],
-             pathex=['.'],
-             binaries=[],
-             datas=[{', '.join(datas)}],
-             hiddenimports=[],
-             hookspath=[],
-             runtime_hooks=[],
-             excludes=[],
-             win_no_prefer_redirects=False,
-             macosx_bundle_identifier=None)
+a = Analysis(
+    ['{MAIN_SCRIPT}'],
+    pathex=['.'],
+    binaries=[],
+    datas=[{', '.join(f"('{d}', '{d}')" for d in DATA_DIRS)}],
+    hiddenimports=[],
+    hookspath=[],
+    runtime_hooks=[],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    macosx_bundle_identifier=None
+)
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-exe = EXE(pyz,
-          a.scripts,
-          a.binaries,
-          a.datas,
-          [],
-          name='{executable_name}',
-          debug=False,
-          bootloader_ignore_signals=False,
-          strip=False,
-          upx=True,
-          runtime_tmpdir=None,
-          console=True)
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='{executable_name}',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='{APP_NAME}'
+)
 """
 
     with open(f"{APP_NAME}.spec", "w") as f:
         f.write(spec_content)
 
-    # Build command
+    # Build command (now using --onefile)
     build_cmd = [
         "pyinstaller",
         "--name", APP_NAME,
@@ -78,7 +87,8 @@ exe = EXE(pyz,
         "--distpath", DIST_DIR,
         "--workpath", os.path.join(BUILD_DIR, "temp"),
         "--clean",
-        "--noconfirm"
+        "--noconfirm",
+        "--onefile"  # This is critical for macOS builds
     ]
 
     if ICON_PATH and os.path.exists(ICON_PATH):
@@ -94,9 +104,23 @@ exe = EXE(pyz,
         output_dir = os.path.join(BUILD_DIR, platform_info['plat'])
         os.makedirs(output_dir, exist_ok=True)
         
-        # Copy executable
-        shutil.move(os.path.join(DIST_DIR, executable_name), 
-                   os.path.join(output_dir, executable_name))
+        # macOS creates a nested directory for the executable
+        if platform_info['plat'] == "macos":
+            source_path = os.path.join(DIST_DIR, executable_name)
+            target_path = os.path.join(output_dir, executable_name)
+            
+            # Handle macOS app bundle if present
+            app_bundle = os.path.join(DIST_DIR, f"{APP_NAME}.app")
+            if os.path.exists(app_bundle):
+                print("Found macOS app bundle, moving it...")
+                shutil.move(app_bundle, os.path.join(output_dir, f"{APP_NAME}.app"))
+                target_path = os.path.join(output_dir, f"{APP_NAME}.app", "Contents", "MacOS", APP_NAME)
+                source_path = target_path  # For checksum calculation
+            else:
+                shutil.move(source_path, target_path)
+        else:
+            shutil.move(os.path.join(DIST_DIR, executable_name), 
+                       os.path.join(output_dir, executable_name))
         
         # Copy data files
         for data_dir in DATA_DIRS:
@@ -109,10 +133,9 @@ exe = EXE(pyz,
             shutil.copy(ENV_TEMPLATE, os.path.join(output_dir, ".env"))
         
         # Generate checksum
-        executable_path = os.path.join(output_dir, executable_name)
-        if os.path.exists(executable_path):
+        if os.path.exists(source_path):
             with open(os.path.join(output_dir, "checksum.sha256"), "w") as f:
-                with open(executable_path, 'rb') as f2:
+                with open(source_path, 'rb') as f2:
                     content = f2.read()
                 hash_str = hashlib.sha256(content).hexdigest()
                 f.write(f"{hash_str}  {executable_name}")
@@ -133,14 +156,13 @@ def get_platform_info():
     """Get platform-specific settings"""
     system = platform.system().lower()
     platforms = {
-        "windows": {"ext": ".exe", "plat": "win", "args": []},
-        "darwin": {"ext": "", "plat": "macos", "args": ["--windowed"]},
-        "linux": {"ext": "", "plat": "linux", "args": []}
+        "windows": {"ext": ".exe", "plat": "win"},
+        "darwin": {"ext": "", "plat": "macos"},
+        "linux": {"ext": "", "plat": "linux"}
     }
-    return platforms.get(system, {"ext": "", "plat": "unknown", "args": []})
+    return platforms.get(system, {"ext": "", "plat": "unknown"})
 
 if __name__ == "__main__":
-    args = parse_args()
     clean_build_dirs()
     
     if not os.path.exists(MAIN_SCRIPT):
