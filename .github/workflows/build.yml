@@ -1,4 +1,5 @@
-name: Build
+name: Build & Release
+
 # Trigger on all branches and manual dispatch
 on:
   push:
@@ -25,13 +26,13 @@ jobs:
             ext: ''
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - name: Checkout code (latest branch)
+      uses: actions/checkout@main  # Using latest branch
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
+    - name: Set up Python (latest)
+      uses: actions/setup-python@main  # Using latest branch
       with:
-        python-version: '3.9'
+        python-version: '3.x'  # Dynamically use latest Python 3.x
 
     - name: Install dependencies
       run: |
@@ -40,7 +41,7 @@ jobs:
 
     - name: Build executable
       run: |
-        python build.py --version ${{ github.run_number }}
+        python build.py
 
     - name: Generate checksum
       run: |
@@ -49,7 +50,7 @@ jobs:
         find . -type f -not -name "*.sha256" -exec sha256sum {} + > checksum.sha256
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@main  # Using latest branch
       with:
         name: ${{ matrix.folder }}-build-${{ github.ref_name }}
         path: |
@@ -61,6 +62,54 @@ jobs:
     needs: build
     steps:
     - name: Download artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@main  # Using latest branch
       with:
         path: build
+
+    - name: Run unit tests (example)
+      run: |
+        python -m pytest tests/
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'  # Only on main branch
+
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@main
+      with:
+        path: build
+
+    - name: Create release
+      id: create_release
+      uses: actions/create-release@main  # Using latest branch
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}
+        release_name: Release v${{ github.run_number }}
+
+    - name: Upload Linux asset
+      uses: actions/upload-release-asset@main  # Using latest branch
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: build/linux/ServerMonitorBot
+        asset_name: ServerMonitorBot-linux
+        asset_content_type: application/octet-stream
+
+    - name: Upload Windows asset
+      uses: actions/upload-release-asset@main
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: build/win/ServerMonitorBot.exe
+        asset_name: ServerMonitorBot-windows.exe
+        asset_content_type: application/octet-stream
+
+    - name: Upload macOS asset
+      uses: actions/upload-release-asset@main
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: build/macos/ServerMonitorBot
+        asset_name: ServerMonitorBot-macos
+        asset_content_type: application/octet-stream

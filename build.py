@@ -4,9 +4,8 @@ import platform
 import subprocess
 import shutil
 from argparse import ArgumentParser
-import hashlib  # Added missing import
 
-# Configuration
+# Configuration (Version now hardcoded)
 APP_NAME = "ServerMonitorBot"
 MAIN_SCRIPT = "bot.py"
 BUILD_DIR = "build"
@@ -14,11 +13,10 @@ DIST_DIR = "dist"
 ICON_PATH = "icon.ico"
 DATA_DIRS = ["database"]
 ENV_TEMPLATE = ".env.example"
-SCHEMA_VERSION = 1
 
 def parse_args():
+    """No longer requires version argument"""
     parser = ArgumentParser(description="Build the bot executable")
-    parser.add_argument("--version", required=True, help="Version number (e.g., 1.4.2)")
     return parser.parse_args()
 
 def clean_build_dirs():
@@ -28,48 +26,19 @@ def clean_build_dirs():
         if os.path.exists(dir_path):
             shutil.rmtree(dir_path)
 
-def setup_build_env(version):
-    """Set up environment variables for build"""
-    env = os.environ.copy()
-    env["BOT_VERSION"] = version
-    env["SCHEMA_VERSION"] = str(SCHEMA_VERSION)
-    
-    # Create temporary .env with version info
-    temp_env = f".env.build"
-    with open(ENV_TEMPLATE, 'r') as src, open(temp_env, 'w') as dst:
-        for line in src:
-            if line.startswith("BOT_VERSION"):
-                dst.write(f"BOT_VERSION={version}\n")
-            elif line.startswith("SCHEMA_VERSION"):
-                dst.write(f"SCHEMA_VERSION={SCHEMA_VERSION}\n")
-            else:
-                dst.write(line)
-    
-    return env
-
-def get_platform_info():
-    """Get platform-specific settings"""
-    system = platform.system().lower()
-    platforms = {
-        "windows": {"ext": ".exe", "plat": "win", "args": []},
-        "darwin": {"ext": "", "plat": "macos", "args": ["--windowed"]},
-        "linux": {"ext": "", "plat": "linux", "args": []}
-    }
-    return platforms.get(system, {"ext": "", "plat": "unknown", "args": []})
-
-def build_executable(version, env):
+def build_executable():
     """Build the executable using PyInstaller"""
-    print(f"Building version {version}...")
+    print("Starting build process...")
     
     platform_info = get_platform_info()
     executable_name = f"{APP_NAME}{platform_info['ext']}"
     
     # Generate datas string in the format ('dir','dir')
     datas = []
-    for d in DATA_DIRS + [os.path.dirname(ENV_TEMPLATE)]:
+    for d in DATA_DIRS:
         datas.append(f"('{d}', '{d}')")
     
-    # Create spec file with version info
+    # Create spec file content
     spec_content = f"""# -*- mode: python ; coding: utf-8 -*-
 block_cipher = None
 
@@ -83,8 +52,7 @@ a = Analysis(['{MAIN_SCRIPT}'],
              excludes=[],
              win_no_prefer_redirects=False,
              macosx_bundle_identifier=None)
-pyz = PYZ(a.pure, a.zipped_data,
-          cipher=block_cipher)
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(pyz,
           a.scripts,
           a.binaries,
@@ -120,7 +88,7 @@ exe = EXE(pyz,
 
     try:
         print("Running PyInstaller...")
-        subprocess.run(build_cmd, check=True, env=env)
+        subprocess.run(build_cmd, check=True)
         
         # Create platform-specific distribution folder
         output_dir = os.path.join(BUILD_DIR, platform_info['plat'])
@@ -132,11 +100,13 @@ exe = EXE(pyz,
         
         # Copy data files
         for data_dir in DATA_DIRS:
-            shutil.copytree(data_dir, os.path.join(output_dir, data_dir), 
-                          dirs_exist_ok=True)
+            if os.path.exists(data_dir):
+                shutil.copytree(data_dir, os.path.join(output_dir, data_dir), 
+                              dirs_exist_ok=True)
         
         # Copy config file
-        shutil.copy(".env.build", os.path.join(output_dir, ".env"))
+        if os.path.exists(ENV_TEMPLATE):
+            shutil.copy(ENV_TEMPLATE, os.path.join(output_dir, ".env"))
         
         # Generate checksum
         executable_path = os.path.join(output_dir, executable_name)
@@ -155,19 +125,27 @@ exe = EXE(pyz,
         return False
     finally:
         # Clean up temporary files
-        for f in [f"{APP_NAME}.spec", ".env.build"]:
+        for f in [f"{APP_NAME}.spec"]:
             if os.path.exists(f):
                 os.remove(f)
+
+def get_platform_info():
+    """Get platform-specific settings"""
+    system = platform.system().lower()
+    platforms = {
+        "windows": {"ext": ".exe", "plat": "win", "args": []},
+        "darwin": {"ext": "", "plat": "macos", "args": ["--windowed"]},
+        "linux": {"ext": "", "plat": "linux", "args": []}
+    }
+    return platforms.get(system, {"ext": "", "plat": "unknown", "args": []})
 
 if __name__ == "__main__":
     args = parse_args()
     clean_build_dirs()
     
-    build_env = setup_build_env(args.version)
-    
     if not os.path.exists(MAIN_SCRIPT):
         print(f"Error: Main script '{MAIN_SCRIPT}' not found!")
         sys.exit(1)
         
-    success = build_executable(args.version, build_env)
+    success = build_executable()
     sys.exit(0 if success else 1)

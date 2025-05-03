@@ -18,8 +18,7 @@ import aiohttp
 
 # Hard-coded values (not user-configurable)
 GITHUB_REPO = "jishnukarri/a2s-discord-status-bot"  # Your official repository
-BOT_VERSION = os.getenv("BOT_VERSION", "dev")  # Auto-updated by build process
-
+BOT_VERSION = "1.4.3"
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
