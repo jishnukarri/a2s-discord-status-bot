@@ -1,5 +1,4 @@
-name: Build & Test All Branches
-
+name: Build
 # Trigger on all branches and manual dispatch
 on:
   push:
