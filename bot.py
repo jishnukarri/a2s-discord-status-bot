@@ -10,11 +10,6 @@ from dotenv import load_dotenv
 from tabulate import tabulate
 from collections import defaultdict
 import matplotlib.pyplot as plt
-import hashlib
-import sys
-import platform
-import subprocess
-import aiohttp
 
 # Hard-coded values (not user-configurable)
 GITHUB_REPO = "jishnukarri/a2s-discord-status-bot"  # Your official repository
@@ -348,99 +343,12 @@ class ServerMonitor:
         
         return graph_path
 
-class Updater:
-    def __init__(self):
-        self.session = aiohttp.ClientSession()
-    
-    async def check_for_updates(self):
-        try:
-            async with self.session.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest") as resp:
-                release = await resp.json()
-                latest_version = release['tag_name'].lstrip('v')
-                
-                if latest_version == BOT_VERSION:
-                    return False
-                
-                # Find matching asset for current platform
-                asset = next(
-                    (a for a in release['assets'] 
-                     if platform.system().lower() in a['name'].lower()),
-                    None
-                )
-                
-                if not asset:
-                    return False
-                
-                # Find checksum asset
-                checksum_asset = next(
-                    (a for a in release['assets'] 
-                     if a['name'].endswith('.sha256')),
-                    None
-                )
-                
-                if not checksum_asset:
-                    return False
-                
-                # Get checksum
-                async with self.session.get(checksum_asset['browser_download_url']) as cs_resp:
-                    checksum = await cs_resp.text()
-                    expected_hash = checksum.split()[0]
-                
-                return {
-                    'version': latest_version,
-                    'download_url': asset['browser_download_url'],
-                    'checksum': expected_hash
-                }
-        except Exception as e:
-            logging.error(f"Update check error: {e}")
-            return False
-    
-    async def perform_update(self, update_info):
-        try:
-            async with self.session.get(update_info['download_url']) as resp:
-                with open('update.tmp', 'wb') as f:
-                    while True:
-                        chunk = await resp.content.read(1024)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-            
-            # Verify checksum
-            sha256_hash = hashlib.sha256()
-            with open('update.tmp', 'rb') as f:
-                for byte_block in iter(lambda: f.read(4096), b""):
-                    sha256_hash.update(byte_block)
-            
-            if sha256_hash.hexdigest() != update_info['checksum']:
-                os.remove('update.tmp')
-                return False
-            
-            # Replace executable
-            os.replace('update.tmp', sys.executable)
-            self._restart_bot()
-            return True
-        except Exception as e:
-            logging.error(f"Update error: {e}")
-            return False
-    
-    def _restart_bot(self):
-        args = sys.argv.copy()
-        args.insert(0, sys.executable)
-        
-        if platform.system() == 'Windows':
-            subprocess.Popen(['start', sys.executable] + args, shell=True)
-        else:
-            subprocess.Popen(['nohup', sys.executable] + args + ['&'], shell=True)
-        
-        sys.exit()
-
 # Discord bot setup
 intents = discord.Intents.default()
 intents.message_content = True
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
 monitor = ServerMonitor()
-updater = Updater()
 
 @bot.event
 async def on_ready():
