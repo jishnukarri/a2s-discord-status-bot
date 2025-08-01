@@ -358,9 +358,10 @@ class ServerMonitor:
                     time_delta = 0
                     
                     if server_reset_detected or player_rejoined:
-                        # Fresh start after reset/rejoin - use current values as deltas
-                        kills_delta = current_kills
-                        time_delta = current_time
+                        # Fresh start after reset/rejoin - don't add any deltas, just reset tracking
+                        kills_delta = 0
+                        time_delta = 0
+                        logging.info(f"{player.name}: Reset detected - resetting tracking without adding to totals")
                     else:
                         # Normal delta calculation
                         kills_delta = max(0, current_kills - stats.current_session_kills)
@@ -1360,21 +1361,69 @@ async def cdlc_autocomplete(interaction: discord.Interaction, current: str) -> l
     return choices
 
 @bot.command(name='reset_player')
-async def reset_player_stats(ctx, player_name: str):
-    """Reset a specific player's session tracking (admin only)."""
+async def reset_player_stats(ctx, player_name: str, reset_type: str = "session"):
+    """Reset a specific player's stats (admin only).
+    
+    Usage: 
+    !reset_player <name> session - Reset only session tracking
+    !reset_player <name> total - Reset all accumulated stats
+    !reset_player <name> all - Reset everything including monthly
+    """
     if not ctx.author.guild_permissions.administrator:
         await ctx.send("Admin permissions required.")
         return
     
-    if player_name in monitor.player_stats:
-        stats = monitor.player_stats[player_name]
+    if player_name not in monitor.player_stats:
+        await ctx.send(f"Player **{player_name}** not found in leaderboard.")
+        return
+    
+    stats = monitor.player_stats[player_name]
+    
+    if reset_type.lower() == "session":
+        # Reset only session tracking
         stats.current_session_kills = 0
         stats.last_session_time = 0
         stats.last_kill_update = None
         await ctx.send(f"Reset session tracking for **{player_name}**")
-        logging.info(f"Manual reset of session tracking for {player_name} by {ctx.author}")
+        logging.info(f"Manual session reset for {player_name} by {ctx.author}")
+        
+    elif reset_type.lower() == "total":
+        # Reset accumulated stats but keep monthly
+        old_kills = stats.kills
+        old_time = stats.time_played
+        stats.kills = 0
+        stats.time_played = 0
+        stats.current_session_kills = 0
+        stats.last_session_time = 0
+        stats.last_kill_update = None
+        await ctx.send(f"Reset total stats for **{player_name}** (was {old_kills} kills, {old_time} mins)")
+        logging.info(f"Manual total reset for {player_name} by {ctx.author} - was {old_kills} kills, {old_time} mins")
+        
+    elif reset_type.lower() == "all":
+        # Reset everything including monthly
+        old_kills = stats.kills
+        old_time = stats.time_played
+        stats.kills = 0
+        stats.time_played = 0
+        stats.current_session_kills = 0
+        stats.last_session_time = 0
+        stats.last_kill_update = None
+        
+        # Also reset monthly if exists
+        if player_name in monitor.monthly_leaderboard:
+            monthly_stats = monitor.monthly_leaderboard[player_name]
+            monthly_stats.kills = 0
+            monthly_stats.time_played = 0
+        
+        await ctx.send(f"Reset ALL stats for **{player_name}** (was {old_kills} kills, {old_time} mins)")
+        logging.info(f"Manual complete reset for {player_name} by {ctx.author} - was {old_kills} kills, {old_time} mins")
+        
     else:
-        await ctx.send(f"Player **{player_name}** not found in leaderboard.")
+        await ctx.send("Invalid reset type. Use: `session`, `total`, or `all`")
+        return
+    
+    # Save changes to database
+    DataManager.save_leaderboard(monitor.player_stats, monitor.monthly_leaderboard)
 
 @bot.command(name='leaderboard_info')
 async def leaderboard_info(ctx, player_name: str = None):
