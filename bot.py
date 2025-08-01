@@ -84,6 +84,41 @@ def init_db():
         month TEXT
     )''')
     
+    # Check if we need to migrate from minutes to seconds
+    cursor.execute("PRAGMA table_info(leaderboard)")
+    columns = [column[1] for column in cursor.fetchall()]
+    
+    # Add migration flag column if it doesn't exist
+    if 'migrated_to_seconds' not in columns:
+        cursor.execute("ALTER TABLE leaderboard ADD COLUMN migrated_to_seconds INTEGER DEFAULT 0")
+        
+        # Migrate existing data from minutes to seconds
+        cursor.execute("SELECT player_name, time_played, migrated_to_seconds FROM leaderboard")
+        players_to_migrate = cursor.fetchall()
+        
+        for player_name, time_played, migrated in players_to_migrate:
+            if migrated == 0 and time_played > 0:
+                # Convert from minutes to seconds (multiply by 60)
+                new_time_seconds = time_played * 60
+                cursor.execute("UPDATE leaderboard SET time_played = ?, migrated_to_seconds = 1 WHERE player_name = ?", 
+                             (new_time_seconds, player_name))
+                logging.info(f"Migrated {player_name}: {time_played} mins -> {new_time_seconds} seconds")
+        
+        # Also migrate monthly leaderboard
+        cursor.execute("ALTER TABLE monthly_leaderboard ADD COLUMN migrated_to_seconds INTEGER DEFAULT 0")
+        cursor.execute("SELECT player_name, time_played, migrated_to_seconds FROM monthly_leaderboard")
+        monthly_to_migrate = cursor.fetchall()
+        
+        for player_name, time_played, migrated in monthly_to_migrate:
+            if migrated == 0 and time_played > 0:
+                # Convert from minutes to seconds (multiply by 60)
+                new_time_seconds = time_played * 60
+                cursor.execute("UPDATE monthly_leaderboard SET time_played = ?, migrated_to_seconds = 1 WHERE player_name = ?", 
+                             (new_time_seconds, player_name))
+                logging.info(f"Migrated monthly {player_name}: {time_played} mins -> {new_time_seconds} seconds")
+        
+        logging.info("Completed migration from minutes to seconds storage")
+    
     conn.commit()
     conn.close()
 
@@ -171,10 +206,36 @@ class DataManager:
             }
             return player_stats, monthly_stats
 
+def format_time_readable(seconds):
+    """Convert seconds to readable format like '43m 2s', '1hr 30mins', '2 days 1.6hrs'."""
+    if seconds < 60:
+        return f"{seconds}s"
+    elif seconds < 3600:  # Less than 1 hour
+        minutes = seconds // 60
+        remaining_seconds = seconds % 60
+        if remaining_seconds > 0:
+            return f"{minutes}m {remaining_seconds}s"
+        else:
+            return f"{minutes}m"
+    elif seconds < 86400:  # Less than 1 day
+        hours = seconds // 3600
+        remaining_minutes = (seconds % 3600) // 60
+        if remaining_minutes > 0:
+            return f"{hours}hr {remaining_minutes}mins"
+        else:
+            return f"{hours}hr"
+    else:  # 1 day or more
+        days = seconds // 86400
+        remaining_hours = (seconds % 86400) / 3600
+        if remaining_hours >= 1:
+            return f"{days} days {remaining_hours:.1f}hrs"
+        else:
+            return f"{days} days"
+
 class PlayerStats:
     def __init__(self, kills=0, time_played=0, last_seen=None, last_kill_update=None, current_session_kills=0, last_session_time=0):
         self.kills = kills
-        self.time_played = time_played
+        self.time_played = time_played  # Store in seconds now
         self.last_seen = last_seen or datetime.datetime.now()
         self.last_kill_update = last_kill_update
         self.current_session_kills = current_session_kills
@@ -319,10 +380,9 @@ class ServerMonitor:
             try:
                 current_kills = getattr(player, 'score', 0) or 0
                 current_time_seconds = int(getattr(player, 'duration', 0) or 0)  # Current session time in seconds
-                current_time = current_time_seconds // 60  # Convert seconds to minutes
                 
                 # Debug logging for time conversion
-                logging.debug(f"{player.name}: Raw time={current_time_seconds}s, Converted={current_time}mins")
+                logging.debug(f"{player.name}: Raw time={current_time_seconds}s")
                 
                 # Get or create player stats
                 stats = self.player_stats.get(player.name, PlayerStats())
@@ -333,14 +393,14 @@ class ServerMonitor:
                 player_rejoined = False
                 
                 # Server reset: current time is 0 but we had previous session data
-                if current_time == 0 and stats.last_session_time > 0:
+                if current_time_seconds == 0 and stats.last_session_time > 0:
                     server_reset_detected = True
                     logging.info(f"Server reset detected for {player.name} (time reset to 0)")
                 
                 # Player rejoined: time went backwards significantly
-                elif current_time < stats.last_session_time and (stats.last_session_time - current_time) > 2:
+                elif current_time_seconds < stats.last_session_time and (stats.last_session_time - current_time_seconds) > 2:
                     player_rejoined = True
-                    logging.info(f"Player rejoin detected for {player.name} (time: {stats.last_session_time} -> {current_time})")
+                    logging.info(f"Player rejoin detected for {player.name} (time: {stats.last_session_time} -> {current_time_seconds})")
                 
                 # Handle resets and rejoins
                 if server_reset_detected or player_rejoined:
@@ -369,7 +429,7 @@ class ServerMonitor:
                     else:
                         # Normal delta calculation
                         kills_delta = max(0, current_kills - stats.current_session_kills)
-                        time_delta = max(0, current_time - stats.last_session_time)
+                        time_delta = max(0, current_time_seconds - stats.last_session_time)
                     
                     # Only add to leaderboard if time has actually progressed
                     # This prevents adding kills when mission hasn't updated yet
@@ -380,14 +440,14 @@ class ServerMonitor:
                         monthly_stats.time_played += time_delta
                         
                         if kills_delta > 0:
-                            logging.info(f"{player.name}: +{kills_delta} kills, +{time_delta} mins (+{time_delta*60} secs) (Total: {stats.kills} kills, {stats.time_played} mins)")
+                            logging.info(f"{player.name}: +{kills_delta} kills, +{format_time_readable(time_delta)} (Total: {stats.kills} kills, {format_time_readable(stats.time_played)})")
                     elif kills_delta > 0 and time_delta == 0:
                         # Kills increased but time didn't - likely mission delay or data inconsistency
                         logging.warning(f"{player.name}: Kills increased (+{kills_delta}) but time didn't (+{time_delta}) - skipping update (mission sync delay?)")
                     
                     # Update tracking values
                     stats.current_session_kills = current_kills
-                    stats.last_session_time = current_time
+                    stats.last_session_time = current_time_seconds
                     stats.last_kill_update = now
                 
                 # Always update last seen
@@ -598,7 +658,7 @@ class ServerMonitor:
         for rank, (name, stats) in enumerate(leaderboard, 1):
             embed.add_field(
                 name=f"{rank}. {name}",
-                value=f"**Kills:** {stats.kills} | **Time Played:** {stats.time_played} mins",
+                value=f"**Kills:** {stats.kills} | **Time Played:** {format_time_readable(stats.time_played)}",
                 inline=False
             )
         embed.set_footer(text='\u200b', icon_url=CONFIG['FOOTER_ICON'])
@@ -1400,8 +1460,8 @@ async def reset_player_stats(ctx, player_name: str, reset_type: str = "session")
         stats.current_session_kills = 0
         stats.last_session_time = 0
         stats.last_kill_update = None
-        await ctx.send(f"Reset total stats for **{player_name}** (was {old_kills} kills, {old_time} mins)")
-        logging.info(f"Manual total reset for {player_name} by {ctx.author} - was {old_kills} kills, {old_time} mins")
+        await ctx.send(f"Reset total stats for **{player_name}** (was {old_kills} kills, {format_time_readable(old_time)})")
+        logging.info(f"Manual total reset for {player_name} by {ctx.author} - was {old_kills} kills, {format_time_readable(old_time)}")
         
     elif reset_type.lower() == "all":
         # Reset everything including monthly
@@ -1419,8 +1479,8 @@ async def reset_player_stats(ctx, player_name: str, reset_type: str = "session")
             monthly_stats.kills = 0
             monthly_stats.time_played = 0
         
-        await ctx.send(f"Reset ALL stats for **{player_name}** (was {old_kills} kills, {old_time} mins)")
-        logging.info(f"Manual complete reset for {player_name} by {ctx.author} - was {old_kills} kills, {old_time} mins")
+        await ctx.send(f"Reset ALL stats for **{player_name}** (was {old_kills} kills, {format_time_readable(old_time)})")
+        logging.info(f"Manual complete reset for {player_name} by {ctx.author} - was {old_kills} kills, {format_time_readable(old_time)}")
         
     else:
         await ctx.send("Invalid reset type. Use: `session`, `total`, or `all`")
@@ -1441,9 +1501,9 @@ async def leaderboard_info(ctx, player_name: str = None):
             stats = monitor.player_stats[player_name]
             embed = discord.Embed(title=f"Stats for {player_name}", color=0x00ff00)
             embed.add_field(name="Total Kills", value=stats.kills, inline=True)
-            embed.add_field(name="Total Time", value=f"{stats.time_played} mins", inline=True)
+            embed.add_field(name="Total Time", value=format_time_readable(stats.time_played), inline=True)
             embed.add_field(name="Current Session Kills", value=stats.current_session_kills, inline=True)
-            embed.add_field(name="Last Session Time", value=f"{stats.last_session_time} mins", inline=True)
+            embed.add_field(name="Last Session Time", value=format_time_readable(stats.last_session_time), inline=True)
             embed.add_field(name="Last Seen", value=stats.last_seen.strftime("%Y-%m-%d %H:%M:%S"), inline=True)
             if stats.last_kill_update:
                 embed.add_field(name="Last Kill Update", value=stats.last_kill_update.strftime("%Y-%m-%d %H:%M:%S"), inline=True)
@@ -1458,7 +1518,7 @@ async def leaderboard_info(ctx, player_name: str = None):
         embed = discord.Embed(title="Leaderboard Summary", color=0x00ff00)
         embed.add_field(name="Total Players", value=total_players, inline=True)
         embed.add_field(name="Total Kills", value=total_kills, inline=True)
-        embed.add_field(name="Total Time", value=f"{total_time} mins", inline=True)
+        embed.add_field(name="Total Time", value=format_time_readable(total_time), inline=True)
         await ctx.send(embed=embed)
 
 @bot.event
