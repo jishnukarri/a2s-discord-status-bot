@@ -318,7 +318,11 @@ class ServerMonitor:
                 
             try:
                 current_kills = getattr(player, 'score', 0) or 0
-                current_time = int(getattr(player, 'duration', 0) or 0)  # Current session time in minutes
+                current_time_seconds = int(getattr(player, 'duration', 0) or 0)  # Current session time in seconds
+                current_time = current_time_seconds // 60  # Convert seconds to minutes
+                
+                # Debug logging for time conversion
+                logging.debug(f"{player.name}: Raw time={current_time_seconds}s, Converted={current_time}mins")
                 
                 # Get or create player stats
                 stats = self.player_stats.get(player.name, PlayerStats())
@@ -376,7 +380,7 @@ class ServerMonitor:
                         monthly_stats.time_played += time_delta
                         
                         if kills_delta > 0:
-                            logging.info(f"{player.name}: +{kills_delta} kills, +{time_delta} mins (Total: {stats.kills} kills, {stats.time_played} mins)")
+                            logging.info(f"{player.name}: +{kills_delta} kills, +{time_delta} mins (+{time_delta*60} secs) (Total: {stats.kills} kills, {stats.time_played} mins)")
                     elif kills_delta > 0 and time_delta == 0:
                         # Kills increased but time didn't - likely mission delay or data inconsistency
                         logging.warning(f"{player.name}: Kills increased (+{kills_delta}) but time didn't (+{time_delta}) - skipping update (mission sync delay?)")
