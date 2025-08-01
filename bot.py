@@ -1,6 +1,6 @@
 import discord
-from discord import app_commands
 import a2s
+import datetime
 import asyncio
 import os
 import json
@@ -10,9 +10,8 @@ import requests
 import re
 from discord.ext import commands
 from dotenv import load_dotenv
-from tabulate import tabulate
 from collections import defaultdict
-import matplotlib.pyplot as plt
+from tabulate import tabulate
 
 # Try to import arma3query, fallback if not available
 try:
@@ -29,16 +28,15 @@ logging.basicConfig(
     handlers=[logging.FileHandler('bot_runtime.log'), logging.StreamHandler()]
 )
 
-# Load user configuration (excluding hard-coded values)
+# Load configuration from .env file with defaults
 load_dotenv()
-
 CONFIG = {
     'REFRESH_INTERVAL': int(os.getenv('REFRESH_INTERVAL', 10)),
     'API_KEY': os.getenv('API_KEY'),
     'CHANNEL_ID': int(os.getenv('CHANNEL_ID')),
     'SERVERS': json.loads(os.getenv('SERVERS', '[]')),
     'QUERY_TIMEOUT': int(os.getenv('QUERY_TIMEOUT', 5)),
-    'DATABASE_FILE': os.getenv('DATABASE_FILE', 'database/data.json'),
+    'DATABASE_FILE': os.getenv('DATABASE_FILE', 'bot_data.db'),
     'MAX_RETRIES': int(os.getenv('MAX_RETRIES', 3)),
     'CUSTOM_TITLE': os.getenv('CUSTOM_TITLE', 'Server Status'),
     'CUSTOM_TEXT': os.getenv('CUSTOM_TEXT', '**DM an admin to join our servers!**'),
@@ -177,8 +175,8 @@ class PlayerStats:
     def __init__(self, kills=0, time_played=0, last_seen=None, last_kill_update=None, current_session_kills=0, last_session_time=0):
         self.kills = kills
         self.time_played = time_played
-        self.last_seen = last_seen or datetime.now().isoformat()
-        self.last_kill_update = last_kill_update or datetime.now().isoformat()
+        self.last_seen = last_seen or datetime.datetime.now()
+        self.last_kill_update = last_kill_update
         self.current_session_kills = current_session_kills
         self.last_session_time = last_session_time  # Track last known session time to detect resets
 
@@ -219,7 +217,6 @@ class PresetServerManager:
 
 class ServerMonitor:
     def __init__(self):
-        self.db = JSONDatabase(CONFIG['DATABASE_FILE'])
         self.status_message = None
         self.leaderboard_message = None
         self.server_data = {}
@@ -230,16 +227,17 @@ class ServerMonitor:
         self.preset_manager = PresetServerManager()
 
     async def query_server(self, address):
+        """Query a game server with retry logic."""
         for attempt in range(CONFIG['MAX_RETRIES']):
             try:
                 info = await asyncio.wait_for(a2s.ainfo(address), timeout=CONFIG['QUERY_TIMEOUT'])
                 players = await asyncio.wait_for(a2s.aplayers(address), timeout=CONFIG['QUERY_TIMEOUT'])
                 return info, players, round(info.ping * 1000)
             except Exception as e:
-                logging.warning(f"Attempt {attempt + 1} failed for {address}: {e}")
+                logging.warning(f"Attempt {attempt + 1} failed for {address}: {str(e)}")
                 await asyncio.sleep(1)
         return None, [], None
-    
+
     async def update_all_servers(self):
         """Update all servers in parallel and handle leaderboard reset."""
         # Fetch preset server configuration
@@ -249,12 +247,8 @@ class ServerMonitor:
         tasks = [self.update_single_server(server['ip'], server['port']) for server in CONFIG['SERVERS']]
         await asyncio.gather(*tasks)
         self.check_monthly_reset()
-        
-        # Save to database
-        await self.db.update('leaderboard', {name: stats.to_dict() for name, stats in self.player_stats.items()})
-        await self.db.update('monthly_leaderboard', {name: stats.to_dict() for name, stats in self.monthly_leaderboard.items()})
-        await self.db.update('weekly_activity', self.weekly_activity)
-    
+        DataManager.save_leaderboard(self.player_stats, self.monthly_leaderboard)
+
     async def update_single_server(self, ip, port):
         address = (ip, port)
         try:
@@ -587,42 +581,25 @@ class ServerMonitor:
         embed.set_footer(text='\u200b', icon_url=CONFIG['FOOTER_ICON'])
         embed.timestamp = datetime.datetime.now()
         return embed
-    
+
     def format_leaderboard(self):
-        current_month = datetime.now().strftime('%Y-%m')
-        monthly_stats = next((entry['stats'] for entry in reversed(self.db.data.get('monthly_leaderboards', [])) 
-                             if entry['month'] == current_month), {})
-        
-        combined = {}
-        # Global stats
-        for name, stats in self.player_stats.items():
-            combined[name] = (stats.kills, stats.time_played)
-        
-        # Monthly stats
-        for name, stats in monthly_stats.items():
-            combined[name] = (
-                combined.get(name, (0, 0))[0] + stats.get('kills', 0),
-                combined.get(name, (0, 0))[1] + stats.get('time_played', 0)
-            )
-        
-        sorted_players = sorted(
-            combined.items(),
-            key=lambda x: (x[1][0], x[1][1]),
+        leaderboard = sorted(
+            self.player_stats.items(),
+            key=lambda x: (x[1].kills, x[1].time_played),
             reverse=True
         )[:CONFIG['LEADERBOARD_SIZE']]
-        
-        embed = discord.Embed(title=sanitize_text(CONFIG['LEADERBOARD_TITLE']), color=CONFIG['LEADERBOARD_COLOR'])
-        
-        for rank, (name, stats) in enumerate(sorted_players, 1):
+
+        embed = discord.Embed(title=CONFIG['LEADERBOARD_TITLE'], color=CONFIG['LEADERBOARD_COLOR'])
+        for rank, (name, stats) in enumerate(leaderboard, 1):
             embed.add_field(
                 name=f"{rank}. {name}",
                 value=f"**Kills:** {stats.kills} | **Time Played:** {stats.time_played} mins",
                 inline=False
             )
-        
-        embed.set_footer(text=f"Version {BOT_VERSION}", icon_url=CONFIG['FOOTER_ICON'])
+        embed.set_footer(text='\u200b', icon_url=CONFIG['FOOTER_ICON'])
+        embed.timestamp = datetime.datetime.now()
         return embed
-    
+
     def get_rank_emoji(self, rank):
         # Simplified without emojis
         return str(rank)
@@ -1445,7 +1422,6 @@ async def on_ready():
     
     channel = bot.get_channel(CONFIG['CHANNEL_ID'])
     
-    # Clean up old messages
     async for message in channel.history(limit=100):
         if message.author == bot.user:
             await message.delete()
@@ -1461,6 +1437,7 @@ async def on_ready():
     bot.loop.create_task(status_update_loop())
 
 async def status_update_loop():
+    """Continuously update server data and Discord messages."""
     while True:
         try:
             # Update server data
@@ -1487,41 +1464,6 @@ async def status_update_loop():
             logging.error(f"Unexpected error in update loop: {str(e)}")
         
         await asyncio.sleep(CONFIG['REFRESH_INTERVAL'])
-
-# Slash commands
-@tree.command(name="status", description="Show server status")
-@app_commands.checks.cooldown(1, 5, key=lambda i: i.user.id)
-async def status(interaction: discord.Interaction):
-    await interaction.response.send_message(embed=monitor.format_server_status(), ephemeral=True)
-
-@tree.command(name="leaderboard", description="Show player rankings")
-@app_commands.checks.cooldown(1, 5, key=lambda i: i.user.id)
-async def leaderboard(interaction: discord.Interaction):
-    await interaction.response.send_message(embed=monitor.format_leaderboard(), ephemeral=True)
-
-@tree.command(name="weeklygraph", description="Generate weekly activity graph")
-@app_commands.checks.cooldown(1, 30, key=lambda i: i.user.id)
-async def weeklygraph(interaction: discord.Interaction):
-    try:
-        graph_path = await monitor.generate_weekly_graph()
-        await interaction.response.send_message(file=discord.File(graph_path), ephemeral=True)
-        os.remove(graph_path)
-    except Exception as e:
-        logging.error(f"Graph generation error: {e}")
-        await interaction.response.send_message("Failed to generate graph.", ephemeral=True)
-
-@tree.command(name="help", description="Show bot usage guide")
-async def help(interaction: discord.Interaction):
-    embed = discord.Embed(title="Bot Commands", description="Available slash commands:")
-    embed.add_field(name="/status", value="Show server status (5s cooldown)", inline=False)
-    embed.add_field(name="/leaderboard", value="Show player rankings (5s cooldown)", inline=False)
-    embed.add_field(name="/weeklygraph", value="Generate weekly player graph (30s cooldown)", inline=False)
-    embed.add_field(name="/help", value="Show this help message", inline=False)
-    embed.set_footer(text=f"Version {BOT_VERSION}")
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-# Register the command tree
-tree = app_commands.CommandTree(bot)
 
 if __name__ == "__main__":
     try:
