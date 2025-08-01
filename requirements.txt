@@ -1,6 +1,6 @@
 discord.py
 a2s
 python-dotenv
+requests
 tabulate
-matplotlib
-aiohttp
+arma3query
