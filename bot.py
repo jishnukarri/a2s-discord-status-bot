@@ -17,9 +17,39 @@ from tabulate import tabulate
 try:
     import arma3query
     ARMA3_QUERY_AVAILABLE = True
+    
+    # Wrapper function to handle potential bugs in arma3query
+    async def safe_arma3rules_async(address):
+        """Wrapper for arma3query.arma3rules_async with error handling."""
+        try:
+            return await arma3query.arma3rules_async(address)
+        except Exception as e:
+            error_msg = str(e)
+            # Handle the "'int' object is not callable" bug in arma3query library
+            if "'int' object is not callable" in error_msg:
+                logging.error(f"arma3query library bug detected for {address}: {error_msg}")
+                logging.error("Please fix arma3query.py line ~120: change 'mod.workshop_id()' to 'mod.workshop_id'")
+            else:
+                logging.error(f"Failed to query Arma 3 rules for {address}: {error_msg}")
+            
+            # Try the synchronous version as a fallback
+            try:
+                return await asyncio.to_thread(arma3query.arma3rules, address)
+            except Exception as fallback_error:
+                fallback_msg = str(fallback_error)
+                if "'int' object is not callable" in fallback_msg:
+                    logging.error(f"Same bug in synchronous version for {address}. Library needs fixing.")
+                else:
+                    logging.error(f"Fallback synchronous method also failed for {address}: {fallback_msg}")
+                raise fallback_error
+                
 except ImportError:
     ARMA3_QUERY_AVAILABLE = False
     logging.warning("arma3query not available. Install with: pip install arma3query")
+    
+    async def safe_arma3rules_async(address):
+        """Dummy function when arma3query is not available."""
+        raise ImportError("arma3query not available")
 
 # Set up logging to file and console
 logging.basicConfig(
@@ -354,8 +384,9 @@ class ServerMonitor:
         if (now - last_update).total_seconds() >= 1200:
             if ARMA3_QUERY_AVAILABLE:
                 try:
+                    logging.debug(f"Querying Arma 3 rules for {address}")
                     rules = await asyncio.wait_for(
-                        arma3query.arma3rules_async(address),
+                        safe_arma3rules_async(address),
                         timeout=CONFIG['QUERY_TIMEOUT']
                     )
                     self.arma_server_data[address] = rules
@@ -363,6 +394,8 @@ class ServerMonitor:
                     logging.info(f"Updated Arma 3 mod data for {address}: {len(rules.mods)} mods, {len(rules.cdlc)} CDLCs")
                 except Exception as e:
                     logging.error(f"Failed to query Arma 3 rules for {address}: {str(e)}")
+                    # Log more details for debugging
+                    logging.debug(f"Full exception details for {address}:", exc_info=True)
             else:
                 logging.warning(f"Cannot query Arma 3 mods for {address} - arma3query not available")
 
@@ -805,6 +838,12 @@ class ModListGenerator:
             return [links]  # Single link
         return None
     
+    def sort_key_ignore_at(self, mod_name):
+        """Generate sort key for mod name, ignoring @ prefix for alphabetical sorting."""
+        # Remove @ prefix for sorting but preserve case-insensitive ordering
+        clean_name = mod_name.lstrip('@').lower()
+        return clean_name
+    
     async def generate_preset_server_mod_list(self, server_name, preset_info):
         """Generate a formatted mod list for a preset server."""
         await self.fetch_config_data()
@@ -840,6 +879,7 @@ class ModListGenerator:
         message_parts.append("**>>>BATTLEYE DISABLED!<<<**\n")
         
         message_parts.append("-" * 164 + "\n")
+
         
         # Prerequisites
         message_parts.append("**Prerequisites:**")
@@ -856,7 +896,18 @@ class ModListGenerator:
         # Check for CDLCs in mod list
         preset_mods = preset_info.get('mods', [])
         # Support both string keys and Steam IDs for CDLCs
-        cdlc_identifiers = ['rf', 'ws', 'spe', 'gm', 'vn', 'csla', 1042220, 1227700, 1294440, 1681170, 1175380, 2647760, 2647830]
+        # Use the correct CDLC Steam IDs
+        cdlc_identifiers = [
+            'rf', 'ws', 'spe', 'gm', 'vn', 'csla',
+            # Correct CDLC Steam IDs
+            1042220,  # Reaction Forces
+            1227700,  # Western Sahara
+            1294440,  # Spearhead 1944
+            1681170,  # Global Mobilization
+            1175380,  # S.O.G. Prairie Fire
+            2647760,  # CSLA Iron Curtain
+            2647830   # CSLA Iron Curtain (alt)
+        ]
         cdlc_mods = [mod for mod in preset_mods if mod in cdlc_identifiers]
         
         if cdlc_mods:
@@ -867,7 +918,7 @@ class ModListGenerator:
                 'gm': 'Global Mobilization',
                 'vn': 'S.O.G. Prairie Fire',
                 'csla': 'CSLA Iron Curtain',
-                # Steam IDs mapped to display names
+                # Correct CDLC Steam IDs mapped to display names
                 1042220: 'Reaction Forces',
                 1227700: 'Western Sahara',
                 1294440: 'Spearhead 1944',
@@ -877,11 +928,19 @@ class ModListGenerator:
                 2647830: 'CSLA Iron Curtain'
             }
             
+            # First collect all valid CDLC info
+            valid_cdlcs = []
             for cdlc in cdlc_mods:
                 cdlc_name = cdlc_names.get(cdlc, str(cdlc).upper())
                 # Use get_cdlc_info method which handles both IDs and names
                 cdlc_info = self.get_cdlc_info(cdlc)
                 if cdlc_info:
+                    valid_cdlcs.append((cdlc_name, cdlc_info))
+            
+            # Only add CDLC section if we have valid CDLCs
+            if valid_cdlcs:
+                message_parts.append("**Required CDLCs:**\n")
+                for cdlc_name, cdlc_info in valid_cdlcs:
                     message_parts.append(f"**{cdlc_name}**")
                     message_parts.append(f"Download: <{cdlc_info.get('link', 'N/A')}>")
                     if cdlc_info.get('pwd'):
@@ -892,9 +951,12 @@ class ModListGenerator:
         regular_mods = [mod for mod in preset_mods if mod not in cdlc_mods]
         
         if regular_mods:
-            message_parts.append("**Mods needed:**\n")
+            message_parts.append("**Server-specific Mods (A-Z):**\n")
             
-            for mod_name in regular_mods:
+            # Sort mods alphabetically, ignoring @ prefix
+            sorted_mods = sorted(regular_mods, key=self.sort_key_ignore_at)
+            
+            for mod_name in sorted_mods:
                 # Get download links using normalized name lookup
                 links = self.get_download_link(mod_name)
                 if links:
@@ -905,6 +967,9 @@ class ModListGenerator:
                             message_parts.append(f"Download: <{link}>")
                         message_parts.append("(ace_nouniformrestrictions mod is in @ace\\optionals\\@ace_nouniformrestrictions")
                         message_parts.append("(just move or copy it to Mods folder))\n")
+                    elif mod_name.lower() == "@ace_nouniformrestrictions":
+                        # Special handling for ace_nouniformrestrictions - show it's in ACE optionals
+                        message_parts.append(f"**{mod_name}:** <@ace/optionals/>\n")
                     else:
                         # Get better display names
                         display_name = self.get_mod_display_name(mod_name)
@@ -989,7 +1054,7 @@ class ModListGenerator:
         message_parts.append(f"Download link: <{arma_link}>")
         message_parts.append("(Yes, you need all 9!)\n")
         
-        # CDLCs if any
+        # CDLCs if any (now contains Steam Workshop IDs from updated arma3query)
         if rules.cdlc:
             message_parts.append("**CDLCs needed:**\n")
             for cdlc in rules.cdlc:
@@ -1069,15 +1134,25 @@ class ModListGenerator:
     
     def get_cdlc_info(self, cdlc_name):
         """Get CDLC download info."""
+        # First try to get CDLC info from steam.json, then fallback to content.json
+        
+        # Check if cdlc_name is a Steam ID that maps to a DLC
+        steam_dlc_ids = self.steam_mods.get('dlc', {})
+        cdlc_key = None
+        
         # Map CDLC names and Steam IDs to our config keys
-        cdlc_map = {
+        cdlc_name_map = {
             'reaction forces': 'rf',
             'western sahara': 'ws', 
             'spearhead 1944': 'spe',
             'global mobilization': 'gm',
             's.o.g. prairie fire': 'vn',
             'csla iron curtain': 'csla',
-            # Steam Workshop IDs for CDLCs
+        }
+        
+        # Additional Steam IDs that might not be in steam.json
+        fallback_steam_ids = {
+            # Correct CDLC Steam IDs
             1042220: 'rf',      # Reaction Forces
             1227700: 'ws',      # Western Sahara
             1294440: 'spe',     # Spearhead 1944
@@ -1087,11 +1162,23 @@ class ModListGenerator:
             2647830: 'csla'     # CSLA Iron Curtain (alternative ID)
         }
         
-        # Handle both string names and integer IDs
         if isinstance(cdlc_name, int):
-            cdlc_key = cdlc_map.get(cdlc_name)
+            # Check steam.json first
+            for key, steam_id in steam_dlc_ids.items():
+                if steam_id == cdlc_name:
+                    cdlc_key = key
+                    break
+            
+            # Fallback to hardcoded mapping
+            if not cdlc_key:
+                cdlc_key = fallback_steam_ids.get(cdlc_name)
         else:
-            cdlc_key = cdlc_map.get(cdlc_name.lower())
+            # String name lookup - first try direct key match
+            if cdlc_name.lower() in ['rf', 'ws', 'spe', 'gm', 'vn', 'csla']:
+                cdlc_key = cdlc_name.lower()
+            else:
+                # Then try name mapping
+                cdlc_key = cdlc_name_map.get(cdlc_name.lower())
             
         if cdlc_key:
             return self.content_links.get('dlc', {}).get(cdlc_key)
