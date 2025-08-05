@@ -355,7 +355,7 @@ class ServerMonitor:
             if ARMA3_QUERY_AVAILABLE:
                 try:
                     rules = await asyncio.wait_for(
-                        asyncio.to_thread(arma3query.arma3rules, address),
+                        arma3query.arma3rules_async(address),
                         timeout=CONFIG['QUERY_TIMEOUT']
                     )
                     self.arma_server_data[address] = rules
@@ -770,7 +770,10 @@ class ModListGenerator:
     def get_mod_name_from_steam_id(self, steam_id):
         """Get mod folder name from steam workshop ID."""
         for mod_name, mod_id in self.steam_mods.get('mods', {}).items():
-            if str(mod_id) == str(steam_id):
+            # Handle both integer IDs and string values
+            if isinstance(mod_id, int) and str(mod_id) == str(steam_id):
+                return mod_name
+            elif isinstance(mod_id, str) and mod_id.isdigit() and str(mod_id) == str(steam_id):
                 return mod_name
         return None
     
@@ -852,7 +855,9 @@ class ModListGenerator:
         
         # Check for CDLCs in mod list
         preset_mods = preset_info.get('mods', [])
-        cdlc_mods = [mod for mod in preset_mods if mod in ['rf', 'ws', 'spe', 'gm', 'vn', 'csla']]
+        # Support both string keys and Steam IDs for CDLCs
+        cdlc_identifiers = ['rf', 'ws', 'spe', 'gm', 'vn', 'csla', 1042220, 1227700, 1294440, 1681170, 1175380, 2647760, 2647830]
+        cdlc_mods = [mod for mod in preset_mods if mod in cdlc_identifiers]
         
         if cdlc_mods:
             cdlc_names = {
@@ -861,12 +866,21 @@ class ModListGenerator:
                 'spe': 'Spearhead 1944',
                 'gm': 'Global Mobilization',
                 'vn': 'S.O.G. Prairie Fire',
-                'csla': 'CSLA Iron Curtain'
+                'csla': 'CSLA Iron Curtain',
+                # Steam IDs mapped to display names
+                1042220: 'Reaction Forces',
+                1227700: 'Western Sahara',
+                1294440: 'Spearhead 1944',
+                1681170: 'Global Mobilization',
+                1175380: 'S.O.G. Prairie Fire',
+                2647760: 'CSLA Iron Curtain',
+                2647830: 'CSLA Iron Curtain'
             }
             
             for cdlc in cdlc_mods:
-                cdlc_name = cdlc_names.get(cdlc, cdlc.upper())
-                cdlc_info = self.content_links.get('dlc', {}).get(cdlc)
+                cdlc_name = cdlc_names.get(cdlc, str(cdlc).upper())
+                # Use get_cdlc_info method which handles both IDs and names
+                cdlc_info = self.get_cdlc_info(cdlc)
                 if cdlc_info:
                     message_parts.append(f"**{cdlc_name}**")
                     message_parts.append(f"Download: <{cdlc_info.get('link', 'N/A')}>")
@@ -1055,16 +1069,30 @@ class ModListGenerator:
     
     def get_cdlc_info(self, cdlc_name):
         """Get CDLC download info."""
+        # Map CDLC names and Steam IDs to our config keys
         cdlc_map = {
             'reaction forces': 'rf',
             'western sahara': 'ws', 
             'spearhead 1944': 'spe',
             'global mobilization': 'gm',
             's.o.g. prairie fire': 'vn',
-            'csla iron curtain': 'csla'
+            'csla iron curtain': 'csla',
+            # Steam Workshop IDs for CDLCs
+            1042220: 'rf',      # Reaction Forces
+            1227700: 'ws',      # Western Sahara
+            1294440: 'spe',     # Spearhead 1944
+            1681170: 'gm',      # Global Mobilization
+            1175380: 'vn',      # S.O.G. Prairie Fire
+            2647760: 'csla',    # CSLA Iron Curtain
+            2647830: 'csla'     # CSLA Iron Curtain (alternative ID)
         }
         
-        cdlc_key = cdlc_map.get(cdlc_name.lower())
+        # Handle both string names and integer IDs
+        if isinstance(cdlc_name, int):
+            cdlc_key = cdlc_map.get(cdlc_name)
+        else:
+            cdlc_key = cdlc_map.get(cdlc_name.lower())
+            
         if cdlc_key:
             return self.content_links.get('dlc', {}).get(cdlc_key)
         return None
@@ -1169,7 +1197,7 @@ async def server_command(interaction: discord.Interaction, server: str = None):
                 
                 for line in lines:
                     # Check if adding this line would exceed the limit
-                    if len(current_chunk) + len(line) + 1 > max_chunk_size:
+                    if len(current_chunk) + len(line + "\n") > max_chunk_size:
                         if current_chunk:
                             chunks.append(current_chunk)
                             current_chunk = line
