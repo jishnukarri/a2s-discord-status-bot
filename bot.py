@@ -480,34 +480,31 @@ class ServerMonitor:
                     
                     # Add to leaderboard when both time and kills have progressed properly
                     if (time_delta > 0 or kills_delta > 0) and not (server_reset_detected or player_rejoined):
-                        # Special case: if kills increased but time didn't, and we're within mission sync window
+                        # Fix: tried to prevent unrealistic jumps from small sessions
+                        if time_delta > 300 and current_time_seconds < 60:
+                            logging.warning(f"{player.name}: Skipping suspicious time_delta {time_delta}s after only {current_time_seconds}s in game")
+                            time_delta = 0  # Don't add this time
+                        # Special case: kills increased but time didn't, mission sync window
                         if kills_delta > 0 and time_delta == 0:
-                            # Check if we're within 5 minutes of last session end (mission sync delay)
                             time_since_last_update = (now - stats.last_kill_update).total_seconds() if stats.last_kill_update else 0
-                            
                             if time_since_last_update <= CONFIG['MISSION_SYNC_DELAY']:
-                                # Within sync window - add kills but warn about timing
                                 stats.kills += kills_delta
                                 monthly_stats.kills += kills_delta
                                 logging.warning(f"{player.name}: Mission sync delay - adding {kills_delta} kills without time increase (within {CONFIG['MISSION_SYNC_DELAY']}s window)")
                             else:
-                                # Outside sync window - likely data inconsistency, skip
                                 logging.warning(f"{player.name}: Kills increased (+{kills_delta}) but time didn't (+{time_delta}) - outside sync window, skipping")
                                 kills_delta = 0
                         else:
-                            # Normal case: both time and kills progressed
                             stats.kills += kills_delta
                             stats.time_played += time_delta
                             monthly_stats.kills += kills_delta
                             monthly_stats.time_played += time_delta
-                        
                         if kills_delta > 0 and time_delta > 0:
                             logging.info(f"{player.name}: +{kills_delta} kills, +{format_time_readable(time_delta)} (Total: {stats.kills} kills, {format_time_readable(stats.time_played)})")
                         elif kills_delta > 0:
                             logging.info(f"{player.name}: +{kills_delta} kills (mission sync delay) (Total: {stats.kills} kills, {format_time_readable(stats.time_played)})")
                         elif time_delta > 0:
                             logging.info(f"{player.name}: +{format_time_readable(time_delta)} playtime (Total: {stats.kills} kills, {format_time_readable(stats.time_played)})")
-                    
                     # Always update tracking values (this establishes the baseline for future comparisons)
                     stats.current_session_kills = current_kills
                     stats.last_session_time = current_time_seconds
