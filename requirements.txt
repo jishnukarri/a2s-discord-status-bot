@@ -2,5 +2,5 @@ discord.py
 python-a2s
 python-dotenv
 requests
-tabulate
 arma3query
+tabulate
