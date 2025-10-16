@@ -141,11 +141,11 @@ def register_commands(bot: commands.Bot, monitor: ServerMonitor) -> None:
             # Multiple download links
             lines.append("**Download Links:**")
             for i, link in enumerate(download_link, 1):
-                lines.append(f"  {i}. <{link}>")
+                lines.append(f"{i}. {link}")
             lines.append("")  # Empty line
         else:
             # Single download link
-            lines.append(f"**Download:** <{download_link}>")
+            lines.append(f"**Download:** {download_link}")
         
         if password != 'N/A':
             lines.append(f"**Password:** {password}\n")
@@ -163,11 +163,48 @@ def register_commands(bot: commands.Bot, monitor: ServerMonitor) -> None:
             "• Ensure Arma 3 is closed during install",
             "• Some servers require specific DLCs",
         ])
+        
+        # Build message and handle splitting if needed
         text = "\n".join(lines)
         try:
             dm = await interaction.user.create_dm()
-            await dm.send(text)
-            await interaction.followup.send(f"DLC info for **{desc}** sent to DM.", ephemeral=True)
+            
+            # Split if message is too long
+            if len(text) > 1900:
+                # Split into chunks
+                MAX_MSG = 1900
+                text_lines = text.split('\n')
+                chunks: List[str] = []
+                current: List[str] = []
+                current_len = 0
+                
+                for line in text_lines:
+                    add_len = len(line) + (1 if current else 0)
+                    if current_len + add_len > MAX_MSG:
+                        if current:
+                            chunks.append('\n'.join(current))
+                        current = [line]
+                        current_len = len(line)
+                    else:
+                        current.append(line)
+                        current_len += add_len
+                
+                if current:
+                    chunks.append('\n'.join(current))
+                
+                # Send all chunks
+                for idx, chunk in enumerate(chunks, 1):
+                    if len(chunks) > 1:
+                        header = f"**{desc} - Part {idx}/{len(chunks)}**\n\n"
+                        await dm.send(header + chunk)
+                    else:
+                        await dm.send(chunk)
+                    await asyncio.sleep(0.15)
+                
+                await interaction.followup.send(f"DLC info for **{desc}** sent to DM ({len(chunks)} message{'s' if len(chunks)>1 else ''}).", ephemeral=True)
+            else:
+                await dm.send(text)
+                await interaction.followup.send(f"DLC info for **{desc}** sent to DM.", ephemeral=True)
         except discord.Forbidden:
             await interaction.followup.send(text[:1900], ephemeral=True)
 
