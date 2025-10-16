@@ -319,30 +319,29 @@ async def cdlc_command(interaction: discord.Interaction, dlc: str = None):
         message_parts = []
         message_parts.append("**Arma 3 Creator DLCs Available:**\n")
         
-        for i, (dlc_key, dlc_info) in enumerate(dlc_data.items(), 1):
+        for dlc_key, dlc_info in dlc_data.items():
             description = dlc_info.get('description', dlc_key.upper())
-            message_parts.append(f"**{i}.** {description}")
+            message_parts.append(f"• {description}")
         
-        message_parts.append("\nUse `/cdlc <number>` to get download info for a specific CDLC.")
-        message_parts.append("Example: `/cdlc 1` for the first DLC.")
+        message_parts.append("\nUse `/cdlc <dlc_name>` to get download info for a specific CDLC.")
+        message_parts.append("Example: `/cdlc Western Sahara` or use autocomplete to select.")
         
         await interaction.followup.send("\n".join(message_parts), ephemeral=True)
         return
     
-    # Parse DLC selection
-    try:
-        dlc_index = int(dlc) - 1
-        dlc_keys = list(dlc_data.keys())
-        
-        if dlc_index < 0 or dlc_index >= len(dlc_keys):
-            await interaction.followup.send(f"Invalid DLC number. Please use 1-{len(dlc_keys)}.", ephemeral=True)
-            return
-        
-        selected_key = dlc_keys[dlc_index]
-        selected_dlc = dlc_data[selected_key]
-        
-    except ValueError:
-        await interaction.followup.send("Please provide a valid DLC number.", ephemeral=True)
+    # Find DLC by description (case-insensitive)
+    selected_key = None
+    selected_dlc = None
+    
+    for dlc_key, dlc_info in dlc_data.items():
+        description = dlc_info.get('description', dlc_key.upper())
+        if description.lower() == dlc.lower() or dlc_key.lower() == dlc.lower():
+            selected_key = dlc_key
+            selected_dlc = dlc_info
+            break
+    
+    if not selected_dlc:
+        await interaction.followup.send(f"CDLC '{dlc}' not found. Use `/cdlc` without arguments to see available DLCs.", ephemeral=True)
         return
     
     # Generate DLC info message
@@ -353,11 +352,19 @@ async def cdlc_command(interaction: discord.Interaction, dlc: str = None):
         description = selected_dlc.get('description', selected_key.upper())
         message_parts.append(f"**Arma 3 Creator DLC: {description}**\n")
         
-        # Download info
+        # Download info - handle both single link and array of links
         download_link = selected_dlc.get('link', 'N/A')
         password = selected_dlc.get('pwd', 'N/A')
         
-        message_parts.append(f"**Download:** <{download_link}>")
+        if isinstance(download_link, list):
+            # Multiple download links
+            message_parts.append("**Download Links:**")
+            for idx, link in enumerate(download_link, 1):
+                message_parts.append(f"{idx}. <{link}>")
+        else:
+            # Single download link
+            message_parts.append(f"**Download:** <{download_link}>")
+        
         if password != 'N/A':
             message_parts.append(f"**Password:** {password}\n")
         else:
@@ -449,13 +456,20 @@ async def cdlc_autocomplete(interaction: discord.Interaction, current: str) -> l
     dlc_data = mod_generator.content_links.get('dlc', {})
     
     choices = []
-    for i, (dlc_key, dlc_info) in enumerate(dlc_data.items()):
+    for dlc_key, dlc_info in dlc_data.items():
         if len(choices) >= 25:  # Discord limit
             break
         description = dlc_info.get('description', dlc_key.upper())
-        if len(description) > 80:  # Discord choice name limit
-            description = description[:77] + "..."
-        choices.append(discord.app_commands.Choice(name=f"{i+1}. {description}", value=str(i+1)))
+        
+        # Filter based on current input
+        if current.lower() in description.lower():
+            if len(description) > 100:  # Discord choice name limit
+                display_name = description[:97] + "..."
+            else:
+                display_name = description
+            
+            # Use description as both name and value
+            choices.append(discord.app_commands.Choice(name=display_name, value=description))
     
     return choices
 
