@@ -360,7 +360,8 @@ async def cdlc_command(interaction: discord.Interaction, dlc: str = None):
             # Multiple download links
             message_parts.append("**Download Links:**")
             for idx, link in enumerate(download_link, 1):
-                message_parts.append(f"{idx}. <{link}>")
+                message_parts.append(f"  {idx}. <{link}>")
+            message_parts.append("")  # Empty line after links
         else:
             # Single download link
             message_parts.append(f"**Download:** <{download_link}>")
