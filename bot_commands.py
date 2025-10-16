@@ -132,7 +132,26 @@ def register_commands(bot: commands.Bot, monitor: ServerMonitor) -> None:
         info = dlc_data[key]
         desc = info.get('description', key.upper())
         password = info.get('pwd', 'N/A')
-        lines = [f"**Arma 3 Creator DLC: {desc}**\n", f"**Download:** <{info.get('link','N/A')}>", f"**Password:** {password}\n" if password!='N/A' else ""]
+        
+        # Handle both single link and array of links
+        download_link = info.get('link', 'N/A')
+        lines = [f"**Arma 3 Creator DLC: {desc}**\n"]
+        
+        if isinstance(download_link, list):
+            # Multiple download links
+            lines.append("**Download Links:**")
+            for i, link in enumerate(download_link, 1):
+                lines.append(f"  {i}. <{link}>")
+            lines.append("")  # Empty line
+        else:
+            # Single download link
+            lines.append(f"**Download:** <{download_link}>")
+        
+        if password != 'N/A':
+            lines.append(f"**Password:** {password}\n")
+        else:
+            lines.append("")
+        
         lines.extend([
             "**Installation:**",
             "1. Download the DLC file",
