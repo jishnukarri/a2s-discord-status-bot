@@ -14,6 +14,7 @@ from config import CONFIG
 from database import init_db, DataManager
 from server_monitor import ServerMonitor
 from bot_commands import register_commands
+from mod_generator import ModListGenerator
 
 init_db()
 
@@ -21,6 +22,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 monitor = ServerMonitor()
+mod_generator = ModListGenerator()
 register_commands(bot, monitor)
 
 async def status_update_loop():
@@ -73,8 +75,6 @@ if __name__ == '__main__':
         main()
     except Exception as e:
         logging.error('Critical error: %s', e)
-
-mod_generator = ModListGenerator()
 
 @bot.tree.command(name="server", description="Get mod list and download links for configured servers")
 @discord.app_commands.describe(server="Choose which server to get mods for")
@@ -355,6 +355,9 @@ async def cdlc_command(interaction: discord.Interaction, dlc: str = None):
         # Download info - handle both single link and array of links
         download_link = selected_dlc.get('link', 'N/A')
         password = selected_dlc.get('pwd', 'N/A')
+        
+        # Debug: Check what type we actually have
+        logging.info(f"DLC link type: {type(download_link)}, value: {download_link}")
         
         if isinstance(download_link, list):
             # Multiple download links
