@@ -86,8 +86,8 @@ coll = a.collect(exe, name='{APP_NAME}')
     ]
 
     # Handle icon only for Windows
-    if os.path.exists(ICON_PATH) and platform.system() == "Windows":
-        build_cmd.extend(["--icon", ICON_PATH])
+    #if os.path.exists(ICON_PATH) and platform.system() == "Windows":
+      #  build_cmd.extend(["--icon", ICON_PATH])
 
     build_cmd.append(MAIN_SCRIPT)
 
