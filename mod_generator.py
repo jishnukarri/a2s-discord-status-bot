@@ -124,7 +124,7 @@ class ModListGenerator:
                     continue
                 desc = info.get('description', str(c).upper())
                 parts.append(f"**{desc}**")
-                parts.append(f"Download: <{info.get('link','N/A')}>")
+                self._append_download_link_lines(parts, info.get('link', 'N/A'))
                 if info.get('pwd'):
                     parts.append(f"Password: {info['pwd']}")
                 parts.append("")
