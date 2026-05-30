@@ -9,7 +9,7 @@ import asyncio
 import logging
 import requests
 from typing import Dict, Any
-from config import SERVERS_URL, LOCAL_IP
+from old.config import SERVERS_URL, LOCAL_IP
 
 class PresetServerManager:
     def __init__(self) -> None:

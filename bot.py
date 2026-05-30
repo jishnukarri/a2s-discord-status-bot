@@ -10,11 +10,11 @@ import logging
 import discord
 from discord.ext import commands
 
-from config import CONFIG
-from database import init_db, DataManager
-from server_monitor import ServerMonitor
-from bot_commands import register_commands
-from mod_generator import ModListGenerator
+from old.config import CONFIG
+from old.database import init_db, DataManager
+from old.server_monitor import ServerMonitor
+from old.bot_commands import register_commands
+from old.mod_generator import ModListGenerator
 
 init_db()
 

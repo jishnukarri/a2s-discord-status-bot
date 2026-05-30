@@ -1,0 +1,12 @@
+.git
+.github
+.vscode
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+.env
+bot_runtime.log
+database/*.db

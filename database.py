@@ -7,8 +7,8 @@ import sqlite3
 import datetime
 import logging
 from typing import Dict, Tuple, Optional
-from config import CONFIG
-from models import PlayerStats
+from old.config import CONFIG
+from old.models import PlayerStats
 
 SCHEMA_VERSION = 1  # Future-proofing for migrations
 

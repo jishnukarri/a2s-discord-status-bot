@@ -6,11 +6,11 @@ import discord
 from discord.ext import commands
 from typing import List
 
-from config import CONFIG
-from mod_generator import ModListGenerator
-from server_monitor import ServerMonitor
-from database import DataManager
-from models import format_time_readable
+from old.config import CONFIG
+from old.mod_generator import ModListGenerator
+from old.server_monitor import ServerMonitor
+from old.database import DataManager
+from old.models import format_time_readable
 
 mod_generator = ModListGenerator()
 

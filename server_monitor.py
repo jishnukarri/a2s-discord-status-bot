@@ -9,10 +9,10 @@ import a2s
 from tabulate import tabulate
 import discord
 
-from config import CONFIG
-from models import PlayerStats, format_time_readable
-from database import DataManager
-from preset_manager import PresetServerManager
+from old.config import CONFIG
+from old.models import PlayerStats, format_time_readable
+from old.database import DataManager
+from old.preset_manager import PresetServerManager
 
 # Optional arma3query support
 try:

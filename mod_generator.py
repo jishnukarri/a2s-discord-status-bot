@@ -8,7 +8,7 @@ import asyncio
 import logging
 import requests
 from typing import Dict, Any, List
-from config import CONTENT_URL, STEAM_URL
+from old.config import CONTENT_URL, STEAM_URL
 
 class ModListGenerator:
     def __init__(self) -> None:
@@ -16,6 +16,19 @@ class ModListGenerator:
         self.content_links: Dict[str, Any] = {}
         self.last_config_update: datetime.datetime = datetime.datetime.min
         self.cache_ttl_seconds = 3600
+
+    def _append_download_link_lines(self, parts: List[str], link_value: Any, *, single_label: str = "Download") -> None:
+        if isinstance(link_value, list):
+            if len(link_value) == 1:
+                parts.append(f"**{single_label}:** <{link_value[0]}>")
+            else:
+                parts.append("**Download Links:**")
+                for i, link in enumerate(link_value, 1):
+                    parts.append(f"{i}. <{link}>")
+        elif isinstance(link_value, str):
+            parts.append(f"**{single_label}:** <{link_value}>")
+        else:
+            parts.append(f"**{single_label}:** N/A")
 
     async def fetch_config_data(self) -> None:
         now = datetime.datetime.now()
@@ -124,7 +137,7 @@ class ModListGenerator:
                     continue
                 desc = info.get('description', str(c).upper())
                 parts.append(f"**{desc}**")
-                parts.append(f"Download: <{info.get('link','N/A')}>")
+                self._append_download_link_lines(parts, info.get('link', 'N/A'))
                 if info.get('pwd'):
                     parts.append(f"Password: {info['pwd']}")
                 parts.append("")
