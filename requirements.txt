@@ -1,0 +1,7 @@
+discord.py
+python-a2s
+python-dotenv
+requests
+arma3query
+tabulate
+sentry-sdk

@@ -1,0 +1,41 @@
+# Alternate compose file for deployments where the orchestrator/host already
+# injects configuration into the environment (CI, systemd, Portainer stacks,
+# Swarm/Kubernetes-adjacent tooling, etc.) instead of a checked-out .env file.
+#
+# Usage: export the variables listed in .env.example in the shell/orchestrator
+# that invokes compose, then run:
+#   docker compose -f docker-compose.container-env.yml up --build
+#
+# No env_file is used - values are passed straight through from the calling
+# environment via ${VAR} interpolation.
+services:
+  a2s-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: a2s-discord-bot
+    restart: unless-stopped
+    environment:
+      API_KEY: ${API_KEY}
+      CHANNEL_ID: ${CHANNEL_ID}
+      SERVERS: ${SERVERS}
+      LOCAL_IP: ${LOCAL_IP:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      REFRESH_INTERVAL: ${REFRESH_INTERVAL:-10}
+      QUERY_TIMEOUT: ${QUERY_TIMEOUT:-5}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      DATABASE_FILE: /app/database/bot_data.db
+      CUSTOM_TITLE: ${CUSTOM_TITLE:-Server Status}
+      CUSTOM_TEXT: ${CUSTOM_TEXT:-**DM an admin to join our servers!**}
+      LEADERBOARD_TITLE: ${LEADERBOARD_TITLE:-Player Leaderboard}
+      LEADERBOARD_SIZE: ${LEADERBOARD_SIZE:-10}
+      STATUS_COLOR: ${STATUS_COLOR:-0x1A529A}
+      LEADERBOARD_COLOR: ${LEADERBOARD_COLOR:-0xFFD700}
+      FOOTER_ICON: ${FOOTER_ICON:-https://example.com/icon.jpg}
+      KILL_UPDATE_INTERVAL: ${KILL_UPDATE_INTERVAL:-60}
+      MISSION_SYNC_DELAY: ${MISSION_SYNC_DELAY:-300}
+      MONTHLY_RESET_DAY: ${MONTHLY_RESET_DAY:-3}
+    volumes:
+      - ./database:/app/database

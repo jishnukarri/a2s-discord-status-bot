@@ -1,0 +1,15 @@
+# Default compose file: copy the repo, fill in .env, run `docker compose up --build`.
+# All configuration comes from a local .env file (see .env.example).
+services:
+  a2s-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: a2s-discord-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_FILE: /app/database/bot_data.db
+    volumes:
+      - ./database:/app/database

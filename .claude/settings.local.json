@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p .claude && cat .claude/launch.json 2>/dev/null; echo \"---\"; ls .claude 2>/dev/null)"
+    ]
+  }
+}

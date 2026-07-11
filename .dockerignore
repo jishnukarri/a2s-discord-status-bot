@@ -1,0 +1,15 @@
+.git
+.gitignore
+.claude
+archived
+database
+*.db
+*.log
+__pycache__
+*.pyc
+.env
+.env.local
+wireguard.txt
+wireguard.txt.example
+README.md
+CLAUDE.md

@@ -1,0 +1,17 @@
+# Standard wg-quick client config. Copy this to `wireguard.txt` (gitignored -
+# it holds your private key) and fill in your VPN provider's / your own
+# WireGuard server's values.
+#
+# Only used when running with the docker-compose.vpn.yml overlay - there is
+# no host/python-level VPN support.
+
+[Interface]
+PrivateKey = <your-private-key>
+Address = 10.0.0.2/32
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = <server-public-key>
+Endpoint = <server-ip-or-host>:51820
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
